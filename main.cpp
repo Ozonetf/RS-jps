@@ -1,9 +1,9 @@
 #include "main.h"
-
 using namespace std;
 
-static const string mapfile = "den011d.map";
+// static const string mapfile = "den011d.map";
 // static const string mapfile = "a.map";
+static const string mapfile = "small.map";
 void scanTest()
 {
     warthog::domain::gridmap map(mapfile.c_str());    
@@ -39,7 +39,7 @@ void scanTest()
         //1 is north
         testid = map.to_padded_id_from_unpadded(xx, yy);
 
-        steps = scanner.test_scan(testid, top, c);
+        steps = scanner.test_scan_single(testid, top, c);
         // steps = scanner.scan_west(testid, boo, dir, a, b);
         cout<<"steps: "<<steps<<'\n';
     }
@@ -52,18 +52,29 @@ void scanTest2()
     Scanner scanner(&jps);
     pad_id testid = map.to_padded_id_from_unpadded(153, 61);
     std::vector<pad_id> testvec;
-    testvec = scanner.scan(testid, 100, 100);
+    testvec = scanner.test_scan_full(testid, 100, 100);
     std::cout<<"size: "<<testvec.size()<<'\n';
     for(auto iter : testvec)
     {
         uint32_t x, y; 
-        map.to_unpadded_xy(iter, x, y);
+        map.to_unpadded_xy(iter, x, y);        
         std::cout<<"x: "<<x<<" y: "<<y<<'\n';
     }
 }
 
+void test3()
+{
+    warthog::domain::gridmap map(mapfile.c_str());
+    jps::jump::jump_point_online jps(&map);
+    Solver s(&jps);
+    pad_id id = map.to_padded_id_from_unpadded(uint32_t(17), uint32_t(14));
+    pad_id id2 = map.to_padded_id_from_unpadded(uint32_t(37), uint32_t(17));
+
+    s.test_func(id, id2);
+}
+
 int main(int argc, char const *argv[])
 {
-    scanTest2();
+    test3();
     return 0;
 }

@@ -1,22 +1,20 @@
 #include <scanner.h>
 using namespace warthog::domain;
 
-Scanner::Scanner(jump::jump_point_online<>* _jps)
+
+Scanner::Scanner(jump::jump_point_online<>* _jps) : m_jps(_jps), m_map(m_jps->get_map()), m_rmap(m_jps->get_rmap())
 {
-    m_map = _jps->get_map();
-    m_rmap = _jps->get_rmap();
-    m_jps = _jps;
 };
 
-std::vector<pad_id> Scanner::scan(pad_id start, uint32_t bx, uint32_t by)
+std::vector<pad_id> Scanner::test_scan_full(pad_id start, uint32_t bx, uint32_t by)
 {
     m_bx = bx; m_by = by;
     std::vector<pad_id> ret;
-    scanObstcile(start, ret, EAST, true);
+    scan_obstacle(start, ret, EAST, true);
     return ret;
 }
 
-void Scanner::scanObstcile(pad_id start, std::vector<pad_id> &ret, direction dir, bool _top)
+void Scanner::scan_obstacle(pad_id start, std::vector<pad_id> &ret, direction dir, bool _top)
 {
     scanResult res;
     res.top = _top;
@@ -44,7 +42,7 @@ void Scanner::scanObstcile(pad_id start, std::vector<pad_id> &ret, direction dir
             steps = scan_south(curpos, res);
             break;
         }
-        nextpos = shiftInDir(curpos, steps, d);
+        nextpos = shiftInDir(curpos, steps, d, m_map);
         //if the scan oversteps the boundry, stop the scan and return
         if (d==EAST||d==WEST)
         {
@@ -74,7 +72,7 @@ void Scanner::scanObstcile(pad_id start, std::vector<pad_id> &ret, direction dir
         {
             //the scan hits a convex point, push the corner to the vector
             //shift 1 because the scan stops at a step before the poi
-            curpos = shiftInDir(nextpos, 1, d);
+            curpos = shiftInDir(nextpos, 1, d, m_map);
             if(ret.size() != 0)
             {
                 if (curpos == ret[0])
@@ -97,7 +95,7 @@ void Scanner::scanObstcile(pad_id start, std::vector<pad_id> &ret, direction dir
                 d = EeastorNorth? dir_cw(d): dir_ccw(d);                
             }            
             //curpos is currently on the turning point, shift 1 step before next scan
-            curpos = shiftInDir(curpos, 1, d);
+            curpos = shiftInDir(curpos, 1, d, m_map);
         }
         else if (res.c > res.m)//concave corners
         {
@@ -117,99 +115,60 @@ void Scanner::scanObstcile(pad_id start, std::vector<pad_id> &ret, direction dir
     }
 }
 
-// std::vector<pad_id> Scanner::scanObstcile(uint32_t s, direction dir, bool _top)
-// {
-//     std::vector<pad_id> ret;
-//     direction d = dir;
-//     bool top = _top, looped = false;
-//     pad_id cur = pad_id{s}, firstCorner = pad_id{s}, start = pad_id{s};
-//     int midStoppingPoint;    //stopping point of traversable tiles
-//     int obstaclePoint;       //stopping point of obstacle
-//     uint32_t steps;
-//     while (!looped)
-//     {
-//         switch (d)
-//         {
-//             case EAST:
-//                 steps = scan_east(cur, top, d, midStoppingPoint, obstaclePoint);
-//                 if(top)//scanned obstacle on top slider
-//                 {
-//                     if(midStoppingPoint > obstaclePoint)//convex corner up
-//                     {
-//                         d = NORTH;
-//                         top = false;
-//                         cur = shiftInDir(cur, steps, EAST);
-//                         if(firstCorner == start) 
-//                         {
-//                             firstCorner = cur;
-//                             break;
-//                         }
-//                         if(cur == firstCorner)
-//                         {
-//                             looped = true;
-//                             break;
-//                         }
-//                     }
-//                     if(midStoppingPoint < obstaclePoint)//concave corner down
-//                     {
-//                         d = SOUTH;
-//                         cur = shiftInDir(cur, steps - 1, EAST);
-//                     }
-//                 }
-//                 else//scanned obstacle on bottom slider    
-//                 {
-//                     if(midStoppingPoint < obstaclePoint)//concave corner up
-//                     {
-//                         d = NORTH;
-//                         top = true;
-//                         cur = shiftInDir(cur, steps - 1, EAST);
-//                     }
-//                     if(midStoppingPoint > obstaclePoint )//convex corner down
-//                     {
-//                         d = SOUTH;
-//                         cur = shiftInDir(cur, steps, EAST);
-//                         ret.push_back(cur);
-//                     }
-//                 }
-//                 break;
-//             case WEST:
-//                 scan_west(cur, top, d, midStoppingPoint, obstaclePoint);
-//                 if(top)//scanned obstacle on top slider
-//                 {
-//                     if(midStoppingPoint > obstaclePoint)//convex corner up
-//                     {
-//                         d = NORTH;
-//                     }
-//                     if(midStoppingPoint < obstaclePoint)//concave corner down
-//                     {
-//                         d = SOUTH;
-//                     }
-//                 }
-//                 else//scanned obstacle on bottom slider    
-//                 {
-//                     if(midStoppingPoint < obstaclePoint)//concave corner up
-//                     {
-//                         d = NORTH;
-//                         top = true;
-//                     }
-//                     if(midStoppingPoint > obstaclePoint )//convex corner down
-//                     {
-//                         d = SOUTH;
-//                     }
-//                 }
-//                 break;
-//             case NORTH://jump north should be west?
-//                 scan_east(cur, top, d, midStoppingPoint, obstaclePoint);
-//                 break;
-//             case SOUTH://jump south shoud be east?
-//                 scan_west(cur, top, d, midStoppingPoint, obstaclePoint);
-//                 break;
-//             default:
-//                 break;
-//         }
-//     }
-//     return ret;
-// }
+pad_id Scanner::scan_obstacle(pad_id start, scanResult &res)
+{
+    direction tempd = res.d;
+    uint32_t steps;
+    pad_id ret;
+    // pad_id curpos = start, nextpos;
+    bool EeastorNorth, NorthorSouth, looped = false;
+    assert(res.d==EAST||res.d==WEST||res.d==NORTH||res.d==SOUTH);
+    EeastorNorth = (res.d==EAST||res.d==NORTH);
+    switch (res.d)
+    {            
+    case EAST:
+        steps = scan_east(start, res);            
+        break;
+    case WEST:
+        steps = scan_west(start, res);
+        break;
+    case NORTH:
+        steps = scan_north(start, res);
+        break;
+    case SOUTH:
+        steps = scan_south(start, res);
+        break;
+    }
+    ret = shiftInDir(start, steps, res.d, m_map);
+    
+    //refer to my beautiful drawing
+    if(res.c < res.m)//convex corners
+    {
+        ret = shiftInDir(ret, 1, res.d, m_map);
+        if(res.top)         //4
+        {            
+            res.d = EeastorNorth? dir_ccw(res.d): dir_cw(res.d);
+        }
+        else if(!res.top)   //1
+        {
+            res.d = EeastorNorth? dir_cw(res.d): dir_ccw(res.d);                
+        }
+        ret = shiftInDir(ret, 1, res.d, m_map);
+    }
+    else if (res.c > res.m)//concave corners
+    {
+        if(res.top)         //3
+        {
+            res.d = EeastorNorth? dir_cw(res.d): dir_ccw(res.d);
+        }
+        else if(!res.top)   //2
+        {
+            res.d = EeastorNorth? dir_ccw(res.d): dir_cw(res.d);
+        }
+    }
+    if(EN_diff_WS(res.d, tempd)) res.top = !res.top; //magic
+    return ret;
+}
 
 uint32_t Scanner::scan_east(pad_id start, scanResult &res)
 {
@@ -235,7 +194,7 @@ uint32_t Scanner::scan_south(pad_id start, scanResult &res)
     return scan_hori<false>(m_rmap, start, res);
 }
 
-uint32_t Scanner::test_scan(pad_id start, bool top, char c)
+uint32_t Scanner::test_scan_single(pad_id start, bool top, char c)
 {
     scanResult temp; 
     temp.top = top;
@@ -261,76 +220,23 @@ uint32_t Scanner::test_scan(pad_id start, bool top, char c)
     }
 }
 
-void Scanner::printEastScan(uint64_t i)
+double Scanner::vecangle(pad_id _o, pad_id _a, pad_id _b)
 {
-    std::string s = std::bitset<64>(i).to_string();
-    std::reverse(s.begin(), s.end());
-    std::cout<<"->"<<s<<'\n';
+    std::pair<int, int> o, a, b, oa, ob;
+    o = m_map.id_to_xy(_o);
+    a = m_map.id_to_xy(_a);
+    b = m_map.id_to_xy(_b);
+    oa = {o.first-a.first, o.second-a.second};
+    ob = {o.first-b.first, o.second-b.second};
+    double cross = (oa.first * ob.second - oa.second * ob.first);
+    double dot = (oa.first * ob.first + oa.second * ob.second);
+    return std::atan2(cross, dot) * 180.0/3.141592653589793238463;
 }
 
-void Scanner::printWestScan(uint64_t i)
+scanResult Scanner::init_scan(pad_id start)
 {
-    std::string s = std::bitset<64>(i).to_string();
-    std::reverse(s.begin(), s.end());
-    std::cout<<s<<"<-"<<'\n';
+    scanResult ret;
+    auto slider = gridmap_slider::from_bittable(m_map, start);
+    
+    return ret;
 }
-
-// uint32_t Scanner::scan_west(pad_id origin, bool& top, direction& d, int& stop, int& turn)
-// {
-//     gridmap_slider slider = gridmap_slider::from_bittable(m_map, origin);
-//     slider.adj_bytes(-7);
-//     std::array<uint64_t, 3> neis;
-//     uint32_t steps = 0;
-//     //[0]middle
-//     //[1]above
-//     //[2]below
-//     neis = slider.get_neighbours_64bit_le();
-//     //get the comparing word based on if the obsticle is on top or bottom 
-//     uint64_t comp = top ? neis[1] : neis[2];
-//     uint64_t mid = ~neis[0];
-//     printWestScan(mid);  
-//     maskzero<WEST>(mid, (7-slider.width8_bits));
-//     maskzero<WEST>(comp, (7-slider.width8_bits));
-//     //XOR mask the starting bit in comp to 0 since we dont want to check it because :
-//     //cur could be a turning point making the first bit in comp 1 and the adjacent bit
-//     //in comp will always be 0 unless its a turning point
-//     // comp ^ (1ULL << 63);
-//     // std::cout<<std::bitset<64>(neis[0]>>slider.width8_bits)<<'\n'<<std::bitset<64>(comp>>slider.width8_bits)<<'\n'<<'\n';
-//     std::cout<<"offset: "<<slider.width8_bits<<'\n';
-//     printWestScan(mid);
-//     printWestScan(comp);
-//     if(comp || mid)
-//     {
-//         stop = std::countl_zero(mid);
-//         turn = std::countl_zero(comp);
-//         steps += std::min(stop, turn);
-//         return steps - (7-slider.width8_bits) -1;
-//     }
-//     slider.adj_bytes(-7);
-//     steps += 63-(7-slider.width8_bits)-1;
-//     while (true)
-//     {      
-//         assert(false && "not implemented");  
-//         //[0]middle
-//         //[1]above
-//         //[2]below
-//         neis = slider.get_neighbours_64bit_le();
-//         //get the comparing word based on if the obsticle is on top or bottom 
-//         uint64_t comp = top ? neis[1] : neis[2];
-//         uint64_t mid = ~neis[0];     
-//         maskzero<WEST>(mid, slider.width8_bits);
-//         maskzero<WEST>(comp, slider.width8_bits);
-//         //mid:  flipped bits, 0 is traversable, if a wall is encountered comp will be > 0
-//         //comp: wall is 0 and travasable is 1, if the wall turns neis[0] wii be > 0
-//         if(comp || mid)
-//         {
-//         stop = std::countr_zero(mid);
-//         turn = std::countr_zero(comp);
-//         steps += std::min(stop, turn);
-//         return steps-1;
-//         }
-//         //no turning points, keep scanning in same direction
-//         slider.adj_bytes(8);
-//         steps+=63;
-//     }
-// }

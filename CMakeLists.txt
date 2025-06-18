@@ -12,7 +12,7 @@ warthog_submodule(warthog-core)
 include(cmake/submodule.cmake)
 warthog_submodule(warthog-jps)
 
-add_library(mylib src/scanner.cpp)
+add_library(mylib)
 target_include_directories(mylib PUBLIC include)
 include(cmake/headers.cmake)
 
