@@ -83,25 +83,26 @@ uint32_t Scanner::scan_hori(gridmap::bittable _map, pad_id start, scanResult &re
     uint64_t mid = ~neis[0];
     maskzero<East>(mid, slider.width8_bits);
     maskzero<East>(comp, slider.width8_bits);
-    if constexpr(East)
-    {
-        std::cout<<"mid:    ";
-        printEastScan(mid);
-        std::cout<<"comp:   ";
-        printEastScan(comp);
-    }
-    else
-    {
-        std::cout<<"mid:    ";
-        printWestScan(mid);
-        std::cout<<"comp:   ";
-        printWestScan(comp);
-    }
+    // if constexpr(East)
+    // {
+    //     std::cout<<"mid:    ";
+    //     printEastScan(mid);
+    //     std::cout<<"comp:   ";
+    //     printEastScan(comp);
+    // }
+    // else
+    // {
+    //     std::cout<<"mid:    ";
+    //     printWestScan(mid);
+    //     std::cout<<"comp:   ";
+    //     printWestScan(comp);
+    // }
     if(comp || mid)
     {
         res.m = East? std::countr_zero(mid) : std::countl_zero(mid);
         res.c = East? std::countr_zero(comp) : std::countl_zero(comp);
         steps += std::min(res.m, res.c);
+        assert(steps > 0);
         return steps - slider.width8_bits -1;
     }
     steps += 63 - slider.width8_bits - 1;
@@ -115,29 +116,30 @@ uint32_t Scanner::scan_hori(gridmap::bittable _map, pad_id start, scanResult &re
         mid = ~neis[0];
         maskzero<East>(mid, slider.width8_bits);
         maskzero<East>(comp, slider.width8_bits);
-        if constexpr(East)
-        {
-            std::cout<<"mid:    ";
-            printEastScan(mid);
-            std::cout<<"comp:   ";
-            printEastScan(comp);
-        }
-        else
-        {
-            std::cout<<"mid:    ";
-            printWestScan(mid);
-            std::cout<<"comp:   ";
-            printWestScan(comp);
-        }
+        // if constexpr(East)
+        // {
+        //     std::cout<<"mid:    ";
+        //     printEastScan(mid);
+        //     std::cout<<"comp:   ";
+        //     printEastScan(comp);
+        // }
+        // else
+        // {
+        //     std::cout<<"mid:    ";
+        //     printWestScan(mid);
+        //     std::cout<<"comp:   ";
+        //     printWestScan(comp);
+        // }
         if(comp || mid)
         {
             res.m = East? std::countr_zero(mid) : std::countl_zero(mid);
             res.c = East? std::countr_zero(comp) : std::countl_zero(comp);
             steps += std::min(res.m, res.c);
+            assert(steps > 0);
             return steps - slider.width8_bits;
         }
         slider.adj_bytes(East? 7 : -7);
-        steps += 63 - slider.width8_bits - 1;
+        steps += 63 - slider.width8_bits;
     }
 }
 

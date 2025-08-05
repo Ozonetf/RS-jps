@@ -83,7 +83,7 @@ uint32_t Ray::shoot_hori_ray(pad_id start, domain::gridmap::bittable map)
             return steps - slider.width8_bits;
         }
         slider.adj_bytes(East? 7 : -7);
-        steps += 63;
+        steps += 63  - slider.width8_bits;
     }    
 }
 

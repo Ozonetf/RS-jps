@@ -65,6 +65,7 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
     warthog::domain::gridmap map(mapfile.c_str());
     jps::jump::jump_point_online jps(&map);
     auto s = Solver<SolverTraits::Default>(&jps);
+    std::cout << "experiment\toptimal plenth\trjps plenth\texpanded\tgenerated\theap_pops\tnanos\n";
     // Solver<2> s(&jps);
     for (size_t i = 0; i < scen_mngr.num_experiments(); i++)
     {
@@ -73,7 +74,6 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
         pad_id target = map.to_padded_id_from_unpadded(uint32_t(cur_exp->goalx()), uint32_t(cur_exp->goaly()));
         s.query(start, target);
         auto res = s.get_result();
-        std::cout<< "experiment " << i <<":\t";
         if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON)
         {
             std::cout << "\033[1;32m";  //green 
@@ -82,12 +82,13 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
         {
             std::cout << "\033[1;31m";  //red
         }
-        std::cout << "optimal plenth: " << std::fixed << std::setprecision(10) << cur_exp->distance();
-        std::cout << "\trjps plenth: " << std::fixed << std::setprecision(10) <<res.plenth;
-        std::cout << "\texpanded: " << res.expanded;
-        std::cout << "\tgenerated: " << res.generated;
-        std::cout << "\theap_pops: " << res.heap_pops;
-        std::cout << "\tnanos: " << res.nanos;
+        std::cout << i;
+        std::cout << ":\t" << std::fixed << std::setprecision(10) << cur_exp->distance();
+        std::cout << "\t"  << std::fixed << std::setprecision(10) << res.plenth;
+        std::cout << "\t"  << res.expanded;
+        std::cout << "\t"  << res.generated;
+        std::cout << "\t"  << res.heap_pops;
+        std::cout << "\t"  << to_string(res.nanos.count());
         std::cout << "\033[0m\n";
     }
 }
@@ -104,23 +105,21 @@ void test3(warthog::util::scenario_manager &scen_mngr, string mapname, size_t i)
     s.query(start, target);
     auto res = s.get_result();
     std::cout<< "experiment " << i <<":\t";
-    if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON)
-    {
-        std::cout << "\033[1;32m";  //green 
-        std::cout << "optimal plenth: " << std::fixed << std::setprecision(10) << cur_exp->distance() << "\trjps plenth: " << std::fixed << std::setprecision(10) <<res.plenth;
-        std::cout << "\033[0m\n";
-    }
-    else
-    {
-        std::cout << "\033[1;31m";  //red
-        std::cout << "optimal plenth: " << std::fixed << std::setprecision(10) << cur_exp->distance() << "\trjps plenth: " << std::fixed << std::setprecision(10) <<res.plenth;
-        std::cout << "\033[0m\n";
-    }
+    if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON) std::cout << "\033[1;32m";  //green 
+    else                                                        std::cout << "\033[1;31m";  //red
+
+    std::cout << "optimal plenth: " << std::fixed << std::setprecision(10) << cur_exp->distance();
+    std::cout << "\trjps plenth: " << std::fixed << std::setprecision(10) <<res.plenth;
+    std::cout << "\texpanded: " << res.expanded;
+    std::cout << "\tgenerated: " << res.generated;
+    std::cout << "\theap_pops: " << res.heap_pops;
+    std::cout << "\tnanos: " << to_string(res.nanos.count());
+    std::cout << "\033[0m\n";
 }
 
 static const string MAPNAME = "scene_sp_cha_01";
-constexpr bool test = true;
-static const int TESTCASE = 300;
+constexpr bool test = false;
+static const int TESTCASE = 20;
 int main(int argc, char** argv)
 {
     // parse arguments

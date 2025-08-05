@@ -265,7 +265,7 @@ void Solver<ST>::query(pad_id start, pad_id target)
     int iter = 0;
     while(!heap.empty())
     {
-        if(iter++; iter > 500)
+        if(iter++; iter > 2500)
         {
             std::cout<<"limit exceed\n";
             m_stats.plenth = DBL_MAX; return;
