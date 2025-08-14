@@ -77,6 +77,7 @@ public:
     //returns true if starts on a convex point
     bool init_scan_dir(pad_id start, direction p_dir, scan_dir &dir);
     pad_id grid_ray_incident(pad_id from, pad_id to, direction d);
+    double interval_h(rjps_node cur);
 private:
 
     jump::jump_point_online<>*          m_jps;
@@ -95,9 +96,6 @@ private:
     // void scan_target_blocker(rjps_node cur, std::vector<rjps_node> &vec, Octants O);
     void init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size_t prev_end);
 
-    double interval_h(rjps_node cur);
-
-    pad_id shoot_interval_ray(pad_id start, direction dir);
 };
 
 template <SolverTraits ST>
@@ -133,6 +131,9 @@ void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
 	    "D must be inter-cardinal.");
     auto cur_coord = m_map.id_to_xy(cur.id);
     auto target_coord = m_map.id_to_xy(m_target);
+
+    std::cout << interval_h(cur) << '\n';
+
     //coord postion of ray intersec from shooting to target, potentially unused
     auto temp = pad_id{}, target_scan_start = temp;
     auto s_dir = scan_dir{};
@@ -247,7 +248,7 @@ void Solver<ST>::query(pad_id start, pad_id target)
     heap.reserve(2048);
     
     m_timer.start();
-
+    interval_h(rjps_node(m_map.xy_to_id(125, 10), nullptr, std::pair(1, 3), NORTHWEST));
     auto start_node = rjps_node{start, nullptr, m_map.id_to_xy(start), NONE};
     start_node.gval = 0;
     start_node.hval = m_heuristic.h(start_coord.first, start_coord.second, target_coord.first, target_coord.second);
@@ -430,11 +431,9 @@ void Solver<ST>::init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size
     for(auto i = prev_end, j = heap.size(); i<j; i++)
     {
         auto &node = heap[i];
-        auto cur_coord = m_map.id_to_xy(node.id);
-        auto p_coord = m_map.id_to_xy(parent.id);
         //gval should be the shortest path from parent, since path is taut
-        node.gval = m_heuristic.h(cur_coord.first, cur_coord.second, p_coord.first, p_coord.second) + parent_node->second.gval;
-        node.hval = m_heuristic.h(cur_coord.first, cur_coord.second, t_coord.first, t_coord.second);
+        node.gval = m_heuristic.h(node.id.id, parent.id.id) + parent_node->second.gval;
+        node.hval = m_heuristic.h(node.id.id, m_target.id);
         switch (node.dir)
         {
         case NORTH:
@@ -885,32 +884,36 @@ inline double Solver<ST>::interval_h(rjps_node cur)
     {
         auto dy = m_ray.shoot_ray_north<Travasable>(cur.id);
         y_intv = shift_in_dir(cur.id, dy+1, NORTH, m_map);
-        dy = m_ray.shoot_ray_north<Obstacle>(cur.id);
-        y_intv = shift_in_dir(cur.id, dy+1, NORTH, m_map);
+        dy = m_ray.shoot_ray_north<Obstacle>(y_intv);
+        y_intv = shift_in_dir(y_intv, dy+1, NORTH, m_map);
     }
     else    
     {
         auto dy = m_ray.shoot_ray_south<Travasable>(cur.id);
         y_intv = shift_in_dir(cur.id, dy+1, SOUTH, m_map);
-        dy = m_ray.shoot_ray_south<Obstacle>(cur.id);
-        y_intv = shift_in_dir(cur.id, dy+1, SOUTH, m_map);
+        dy = m_ray.shoot_ray_south<Obstacle>(y_intv);
+        y_intv = shift_in_dir(y_intv, dy+1, SOUTH, m_map);
     }
     if (hori_dir == EAST)
     {
         auto dx = m_ray.shoot_ray_east<Travasable>(cur.id);
         x_intv = shift_in_dir(cur.id, dx+1, EAST, m_map);
-        dx = m_ray.shoot_ray_east<Obstacle>(cur.id);
-        x_intv = shift_in_dir(cur.id, dx+1, EAST, m_map);
+        dx = m_ray.shoot_ray_east<Obstacle>(x_intv);
+        x_intv = shift_in_dir(x_intv, dx+1, EAST, m_map);
     }
     else    
     {
         auto dx = m_ray.shoot_ray_west<Travasable>(cur.id);
         x_intv = shift_in_dir(cur.id, dx+1, WEST, m_map);
-        dx = m_ray.shoot_ray_west<Obstacle>(cur.id);
-        x_intv = shift_in_dir(cur.id, dx+1, WEST, m_map);
+        dx = m_ray.shoot_ray_west<Obstacle>(x_intv);
+        x_intv = shift_in_dir(x_intv, dx+1, WEST, m_map);
     }
-    hx = m_heuristic.h((sn_id_t)x_intv, (sn_id_t)m_target);
-    hy = m_heuristic.h((sn_id_t)y_intv, (sn_id_t)m_target);
+    hx = m_heuristic.h(x_intv.id, m_target.id);
+    hy = m_heuristic.h(y_intv.id, m_target.id);
+    if(cur.id.id % m_map.width() != y_intv.id % m_map.width()) hy = DBL_MAX;
+    if(cur.id.id / m_map.width() != x_intv.id / m_map.width()) hx = DBL_MAX;
+    m_tracer->expand(m_map.id_to_xy(x_intv), "orange", "intx, h: " + to_string(hx));
+    m_tracer->expand(m_map.id_to_xy(y_intv), "orange", "inty, h: " + to_string(hy));
     return std::min(hx, hy);
 }
 
