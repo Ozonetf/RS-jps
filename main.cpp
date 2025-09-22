@@ -66,15 +66,16 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
     warthog::domain::gridmap map(mapfile.c_str());
     jps::jump::jump_point_online jps(&map);
     auto s = Solver<SolverTraits::Default>(&jps);
-    std::cout << "experiment\toptimal plenth\trjps plenth\texpanded\tgenerated\theap_pops\tnanos\n";
+    std::cout << "experiment\toptimal plenth\trjps plenth\texpanded\tgenerated\treopend\tupdated\theap_pops\tnanos\n";
     // Solver<2> s(&jps);
     for (size_t i = 0; i < scen_mngr.num_experiments(); i++)
     {
         const auto& cur_exp = scen_mngr.get_experiment(i);
         pad_id start = map.to_padded_id_from_unpadded(uint32_t(cur_exp->startx()), uint32_t(cur_exp->starty()));
         pad_id target = map.to_padded_id_from_unpadded(uint32_t(cur_exp->goalx()), uint32_t(cur_exp->goaly()));
-        s.query(start, target);
+        s.get_path(start, target);
         auto res = s.get_result();
+        if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON) assert(false &&"failed " + to_string(i));
         if constexpr(Test)
         {
             if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON) std::cout << "\033[1;32m";  //green 
@@ -85,6 +86,8 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
         std::cout << "\t"  << std::fixed << std::setprecision(10) << res.plenth;
         std::cout << "\t"  << res.expanded;
         std::cout << "\t"  << res.generated;
+        std::cout << "\t"  << res.reopend;
+        std::cout << "\t"  << res.updated;
         std::cout << "\t"  << res.heap_pops;
         std::cout << "\t"  << to_string(res.nanos.count());
         if constexpr(Test) std::cout << "\033[0m";
@@ -93,7 +96,7 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
     }
 }
 
-void test3(warthog::util::scenario_manager &scen_mngr, string mapname, size_t i)
+void run_single_test(warthog::util::scenario_manager &scen_mngr, string mapname, size_t i)
 {
     auto mapfile = string{"../maps/" + mapname};
     warthog::domain::gridmap map(mapfile.c_str());
@@ -102,7 +105,7 @@ void test3(warthog::util::scenario_manager &scen_mngr, string mapname, size_t i)
     const auto& cur_exp = scen_mngr.get_experiment(i);
     pad_id start = map.to_padded_id_from_unpadded(uint32_t(cur_exp->startx()), uint32_t(cur_exp->starty()));
     pad_id target = map.to_padded_id_from_unpadded(uint32_t(cur_exp->goalx()), uint32_t(cur_exp->goaly()));
-    s.query(start, target);
+    s.get_path(start, target);
     auto res = s.get_result();
     std::cout<< "experiment " << i <<":\t";
     if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON) std::cout << "\033[1;32m";  //green 
@@ -112,14 +115,16 @@ void test3(warthog::util::scenario_manager &scen_mngr, string mapname, size_t i)
     std::cout << "\trjps plenth: " << std::fixed << std::setprecision(10) <<res.plenth;
     std::cout << "\texpanded: " << res.expanded;
     std::cout << "\tgenerated: " << res.generated;
+    std::cout << "\tre-opend: " << res.reopend;
+    std::cout << "\tupdated: " << res.updated;
     std::cout << "\theap_pops: " << res.heap_pops;
     std::cout << "\tnanos: " << to_string(res.nanos.count());
     std::cout << "\033[0m\n";
 }
 
-static const string MAPNAME = "den011d";
+static const string MAPNAME = "scene_sp_cha_01";
 constexpr bool test = false;
-static const int TESTCASE = 711;
+static const int TESTCASE = 977;
 int main(int argc, char** argv)
 {
     // parse arguments
@@ -129,7 +134,7 @@ int main(int argc, char** argv)
         std::string mapfile  = {"../maps/" + MAPNAME + ".map"};
         auto scen_mngr = warthog::util::scenario_manager{};
         scen_mngr.load_scenario(sfile.c_str());
-        test3(scen_mngr, mapfile, TESTCASE);
+        run_single_test(scen_mngr, mapfile, TESTCASE);
     }
     else
     {

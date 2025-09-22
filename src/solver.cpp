@@ -2,7 +2,7 @@
 
 // template <SolverTraits ST>
 // template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-// uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t boundary, DirectionInfo dir_info)
+// uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, std::vector<search_node> &vec, uint32_t boundary, DirectionInfo dir_info)
 // {
 //     using ScanAttribute::Octants;
 //     using ScanAttribute::ScanType;
@@ -180,7 +180,7 @@
 // }
 
 // template <SolverTraits ST>
-// void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
+// void Solver<ST>::expand(search_node cur, std::vector<search_node> &heap)
 // {
 //     auto cur_coord = m_map.id_to_xy(cur.id);
 //     auto temp = pad_id{};
@@ -191,10 +191,10 @@
 //         temp = m_ray.shoot_to_target(cur.id, m_target, cur.dir);
 //         if(temp == m_target)
 //         {
-//             auto t = rjps_node{m_target, &m_node_map.find(uint64_t(cur.id))->second, m_map.id_to_xy(m_target), NONE};
+//             auto t = search_node{m_target, &m_node_map.find(uint64_t(cur.id))->second, m_map.id_to_xy(m_target), NONE};
 //             auto target_coord = m_map.id_to_xy(m_target);
 //             t.hval = 0;
-//             t.gval = m_heuristic.h(target_coord.first, target_coord.second, cur_coord.first, cur_coord.second);
+//             t.gval = m_octile_h.h(target_coord.first, target_coord.second, cur_coord.first, cur_coord.second);
 //             heap.emplace_back(t);
 //             return;
 //         }
@@ -273,7 +273,7 @@
 // }
 
 // template <SolverTraits ST>
-// void Solver<ST>::init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size_t prev_end)
+// void Solver<ST>::generate(vector<search_node> &heap, search_node parent, size_t prev_end)
 // {
 //     auto parent_node = m_node_map.find((uint64_t)parent.id);
 //     assert(parent_node != m_node_map.end());
@@ -285,8 +285,8 @@
 //         auto cur_coord = m_map.id_to_xy(node.id);
 //         auto p_coord = m_map.id_to_xy(parent.id);
 //         //gval should be the shortest path from parent, since path is taut
-//         node.gval = m_heuristic.h(cur_coord.first, cur_coord.second, p_coord.first, p_coord.second) + parent.gval;
-//         node.hval = m_heuristic.h(cur_coord.first, cur_coord.second, t_coord.first, t_coord.second);
+//         node.gval = m_octile_h.h(cur_coord.first, cur_coord.second, p_coord.first, p_coord.second) + parent.gval;
+//         node.hval = m_octile_h.h(cur_coord.first, cur_coord.second, t_coord.first, t_coord.second);
 //         switch (node.dir)
 //         {
 //         case NORTH:

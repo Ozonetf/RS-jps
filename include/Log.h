@@ -31,7 +31,8 @@ public:
     
     void expand(uint32_t x, uint32_t y, string color, string type);
     void expand(std::pair<uint32_t, uint32_t> p, string color, string type);
-
+    //draws a cell that clears after 1 step
+    void draw_cell(std::pair<uint32_t, uint32_t> p, string color, string type);
     void close_node(std::pair<uint32_t, uint32_t> p);
 
     //draws a 2d ray from start to finish, clears after 1 step

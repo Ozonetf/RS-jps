@@ -18,6 +18,19 @@ void Tracer::expand(std::pair<uint32_t, uint32_t> p, string color, string type)
     ", x: " + to_string(x) + ", y: " + to_string(y) + "}\n";
     m_trace << trace;
 }
+void Tracer::draw_cell(std::pair<uint32_t, uint32_t> p, string color, string type)
+{
+    auto x = uint32_t{p.first}, y = uint32_t{p.second};  
+    if (adj_for_padding)
+    {
+        y-=3;
+    }
+    std::string trace =
+    "- { type: " + type + ", tag: tempGrid" + ", color: " + color +
+    ", id: " + to_string(x) + ":" + to_string(y) + 
+    ", x: " + to_string(x) + ", y: " + to_string(y) + "}\n";
+    m_trace << trace;
+}
 
 void Tracer::close_node(std::pair<uint32_t, uint32_t> p)
 {
@@ -106,6 +119,14 @@ void Tracer::init(pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finis
     "      x: ${{ $.x }}\n"
     "      y: ${{ $.y }}\n"
     "      $if: ${{ $.tag == 'grid'}}\n"
+    "    - $: rect\n"
+    "      fill: ${{ $.color }}\n"
+    "      width: 1\n"
+    "      height: 1\n"
+    "      x: ${{ $.x }}\n"
+    "      y: ${{ $.y }}\n"
+    "      clear: true\n"
+    "      $if: ${{ $.tag == 'tempGrid'}}\n"
     "    - $: ray\n"
     "      x1: ${{$.x}}\n"
     "      y1: ${{$.y}}\n"

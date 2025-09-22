@@ -63,7 +63,7 @@
 // }
 
 // template<SolverTraits ST>
-// pad_id Ray::<ST>shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_node> &vec, rjps_node parent)
+// pad_id Ray::<ST>shoot_rjps_ray(pad_id start, direction d, std::vector<search_node> &vec, search_node parent)
 // {
 //     auto steps = uint32_t{0};
 //     auto ret = m_jps->jump_cardinal(d, jps_id{start.id}, m_jps->id_to_rid(jps_id{start}));
@@ -81,7 +81,7 @@
 // }
 
 // template<SolverTraits ST>
-// pad_id Ray::<ST>shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_node> &vec, rjps_node parent)
+// pad_id Ray::<ST>shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<search_node> &vec, search_node parent)
 // {
 //     auto steps = uint32_t{0};
 //     auto ret = m_jps->jump_cardinal(d, jps_id{start.id}, m_jps->id_to_rid(jps_id{start}));

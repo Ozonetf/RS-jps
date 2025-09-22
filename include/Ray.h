@@ -47,12 +47,12 @@ public:
 
     //shoots jps ray in direction d, appends all jump points to vec ref, returns dead end point
     template<SolverTraits ST>
-    pad_id shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_node> &vec, rjps_node parent);
+    pad_id shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_state> &succ);
 
     //shoots a jps ray in direction d, terminates and returns target if its reached
     //otherwised funcitons identical to shoot_rjps_ray 
     template<SolverTraits ST>
-    pad_id shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_node> &vec, rjps_node parent);
+    pad_id shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_state> &succ);
 };
 
 //simple ray that steps continuouisly until an obstacle is hit
@@ -249,31 +249,38 @@ pad_id Ray::shoot_diag_ray_id(pad_id start, pad_id target, direction dir)
 }
 
 template<SolverTraits ST>
-pad_id Ray::shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_node> &vec, rjps_node parent)
+pad_id Ray::shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_state> &succ)
 {
     auto ret = m_jps->jump_cardinal(d, jps_id{start.id}, m_jps->id_to_rid(jps_id{start.id}));
     if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(m_map.id_to_xy(start), m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
     while (ret.first > 0)
     {
         //at this point, d is the direction of jps when pushed onto the vector, the scan quadrant will be updated at the end of scanning the parent's quadrant
-        vec.emplace_back(ret.second, nullptr, m_map.id_to_xy(ret.second), d);
-        auto r = m_map.id_to_xy(pad_id{ret.second});
+        // succ.emplace_back(ret.second, nullptr, m_map.id_to_xy(ret.second), d);
+        auto n = rjps_state{ret.second};
+        //cache the jps direction the succ is found, used for generating the succ search node
+        succ.emplace_back(ret.second, d);
         ret = m_jps->jump_cardinal(d, ret.second, m_jps->id_to_rid(ret.second));
-        if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(r, m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
+        if constexpr(ST == SolverTraits::OutputToPosthoc) 
+        {
+            auto r = m_map.id_to_xy(pad_id{ret.second});
+            m_tracer->trace_ray(r, m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
+        }
     }
     return pad_id{ret.second.id};
 }
 
 template<SolverTraits ST>
-pad_id Ray::shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_node> &vec, rjps_node parent)
+pad_id Ray::shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_state> &succ)
 {
     auto ret = m_jps->jump_cardinal(d, jps_id{start.id}, m_jps->id_to_rid(jps_id{start.id}));
     if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(m_map.id_to_xy(start), m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
     while (ret.first > 0)
     {
         //at this point, d is the direction of jps when pushed onto the vector, the scan quadrant will be updated at the end of scanning the parent's quadrant
-        vec.emplace_back(ret.second, nullptr, m_map.id_to_xy(ret.second), d);
-        auto r = m_map.id_to_xy(pad_id{ret.second});
+        // succ.emplace_back(ret.second, nullptr, m_map.id_to_xy(ret.second), d);
+        auto n = rjps_state{ret.second};
+        succ.emplace_back(ret.second, d);
         if(ret.second == target)
         {
             return target;
@@ -281,7 +288,11 @@ pad_id Ray::shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, s
         else
         {
             ret = m_jps->jump_cardinal(d, ret.second, m_jps->id_to_rid(ret.second));
-            if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(r, m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
+            if constexpr(ST == SolverTraits::OutputToPosthoc) 
+            {
+                auto r = m_map.id_to_xy(pad_id{ret.second});
+                m_tracer->trace_ray(r, m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
+            }
         }
     }
     return pad_id{ret.second.id};

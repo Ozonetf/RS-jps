@@ -5,7 +5,12 @@
 #include <algorithm>
 #include <map>
 #include <stack>
+#include <string>
 
+
+#include <boost/heap/fibonacci_heap.hpp>
+
+// typedef typename boost::heap::fibonacci_heap<>::handle_type handle_t;
 using namespace warthog::domain;
 using namespace jps;
 
@@ -21,32 +26,42 @@ enum class SolverTraits
     OutputToPosthoc
 };
 
-struct rjps_node
+struct rjps_state
 {
-    pad_id id;
-    rjps_node* parent;
-    direction dir;
-    direction quad_mask = NONE;
-    
-    uint32_t xbound; 
-    uint32_t ybound;
-    double gval = DBL_MAX;
-    double hval;
-    // bool closed = false;
-    static const inline bool quad_closed(const rjps_node& n, const direction& quad){return n.quad_mask & quad;};
-    static inline void close_quad(rjps_node& n, const direction& quad){n.quad_mask = (direction)(quad|n.quad_mask);};
+    pad_id      id = pad_id::none();
+    direction   dir = direction::NONE;
+    direction   quad_mask = direction::NONE;
 
-    rjps_node(pad_id _i, rjps_node* _p, std::pair<uint32_t, uint32_t> bounds, direction _dir) : 
-        id(_i), parent(_p), hval(0), dir(_dir), xbound(bounds.first), ybound(bounds.second){};    
-    rjps_node(pad_id _i, rjps_node* _p, uint32_t _xb, uint32_t _yb, direction _dir) : 
-        id(_i), parent(_p), hval(0), dir(_dir), xbound(_xb), ybound(_yb){};
-    rjps_node(pad_id _i, rjps_node* _p) : id(_i), parent(_p){};
-    rjps_node(){};
+    rjps_state(pad_id _v) : id(_v){};
+    rjps_state(pad_id _v, direction _d) : id(_v), dir(_d){};
+    rjps_state(){};
 };
 
-struct cmp_min_rjps_node
+struct search_node
 {
-    bool operator()(const rjps_node &a, const rjps_node &b) const
+    rjps_state      state;
+    bool            closed = false;
+    search_node*    parent = nullptr;
+    double          gval = 0;
+    double          hval = DBL_MAX;
+    boost::heap::fibonacci_heap<search_node>::handle_type handle;
+    const inline std::string get_key()
+    {
+        return std::string(std::to_string((uint64_t)state.id) +':'+ std::to_string(state.dir));
+    }
+    search_node(rjps_state _state) : state(_state){};
+    search_node(){};
+
+    //WARNING: < is set to > for min-heap, not for comparisons
+    bool operator<( search_node const& rhs ) const
+    {
+        return (gval + hval) > (rhs.gval + rhs.hval);
+    }
+};
+
+struct cmp_min_f
+{
+    bool operator()(const search_node &a, const search_node &b) const
     {
         return (a.gval + a.hval) > (b.gval + b.hval);
     }

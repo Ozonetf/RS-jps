@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <boost/heap/fibonacci_heap.hpp>
 
+// typedef typename boost::heap::fibonacci_heap<search_node>::handle_type handle_t;
 //0x1.6a09e6p0 - root2
 
 struct scan_dir
@@ -39,6 +40,8 @@ struct experiment_result
     int     heap_pops{};
     int     generated{};
     int     expanded{};
+    int     reopend{};
+    int     updated{};
 };
 
 template<SolverTraits ST>
@@ -47,75 +50,66 @@ class Solver
 public:
     Solver(jump::jump_point_online<>* _jps) : 
     m_jps(_jps), m_tracer(new Tracer), m_map(m_jps->get_map()), m_rmap(m_jps->get_rmap()), 
-    m_ray(m_tracer, m_jps), m_scanner(m_tracer, m_jps), m_heuristic(m_map.width(), m_map.height()),
+    m_ray(m_tracer, m_jps), m_scanner(m_tracer, m_jps), m_octile_h(m_map.width(), m_map.height()),
     m_timer()
     {
         static_assert(ST == SolverTraits::Default || ST == SolverTraits::OutputToPosthoc);
         m_tracer->set_dim(m_map.dim());
-        m_node_map.reserve(2048);
+        m_all_node_list.reserve(2048);
     }
     ~Solver() = default;
-    
-    void expand_node(rjps_node n, std::vector<rjps_node> &heap);
+    void get_path(pad_id start, pad_id target);
+    inline experiment_result get_result(){return m_stats;};
 
-    template <direction D>
-    void expand(rjps_node cur, std::vector<rjps_node> &heap);
-
-    // void expand(rjps_node cur, std::vector<rjps_node> &heap);
-
-    void query(pad_id start, pad_id target);
-    experiment_result get_result(){return m_stats;};
-
-    template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-    uint32_t scan_in_bound(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t boundary, direction start_d);
-
-    template <ScanAttribute::Orientation O>
-    uint32_t scan_in_bound(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t xbound, uint32_t ybound, DirectionInfo dir_info);
-    template <ScanAttribute::Orientation O>
-    uint32_t scan_in_bound_alt(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t xbound, uint32_t ybound, DirectionInfo dir_info);
-    
-    //initilizes a scan_dir struct based on a cell on a grid and an rjps scan direction
-    //returns true if starts on a convex point
-    bool init_scan_dir(pad_id start, direction p_dir, scan_dir &dir);
-    pad_id grid_ray_incident(pad_id from, pad_id to, direction d);
-    double interval_h(rjps_node cur);
 private:
 
     jump::jump_point_online<>*          m_jps;
     std::shared_ptr<Tracer>             m_tracer;
     warthog::domain::gridmap::bittable  m_map;
     warthog::domain::gridmap::bittable  m_rmap;
-    heuristic::octile_heuristic         m_heuristic;
+    heuristic::octile_heuristic         m_octile_h;
     Ray                                 m_ray;
     Scanner                             m_scanner;
     pad_id                              m_target;
     std::pair<uint32_t, uint32_t>       m_tcoord;
-    std::unordered_map<uint64_t, rjps_node> m_node_map;
     experiment_result                   m_stats;
     warthog::util::timer                m_timer;
+    std::vector<rjps_state>             m_succ;
+    std::unordered_map<string, search_node> m_all_node_list;
+    boost::heap::fibonacci_heap<search_node> m_pq;
 
+    void expand_node(search_node n);
+    template <direction D>
+    void expand(search_node cur);
+    void generate(search_node* parent);
+    void insert(rjps_state succ, search_node *pred);
+    void insert_start_state(const rjps_state& succ);
     bool target_in_scan_quad(pad_id start, direction quad);
-    // void scan_target_blocker(rjps_node cur, std::vector<rjps_node> &vec, Octants O);
-    void init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size_t prev_end);
-
+    template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
+    uint32_t scan_in_bound(pad_id start, search_node parent, uint32_t boundary, direction start_d);
+    //initilizes a scan_dir struct based on a cell on a grid and an rjps scan direction
+    //returns true if starts on a convex point
+    bool init_scan_dir(pad_id start, direction p_dir, scan_dir &dir);
+    pad_id grid_ray_incident(pad_id from, pad_id to, direction d);
+    double interval_h(const rjps_state& v);
 };
 
 template <SolverTraits ST>
-inline void Solver<ST>::expand_node(rjps_node n, std::vector<rjps_node> &heap)
+inline void Solver<ST>::expand_node(search_node n)
 {
-    switch (n.dir)
+    switch (n.state.dir)
     {
     case NORTHWEST:
-        expand<NORTHWEST>(n, heap);
+        expand<NORTHWEST>(n);
         break;
     case NORTHEAST:
-        expand<NORTHEAST>(n, heap);        
+        expand<NORTHEAST>(n);        
         break;
     case SOUTHWEST:
-        expand<SOUTHWEST>(n, heap);        
+        expand<SOUTHWEST>(n);        
         break;
     case SOUTHEAST:
-        expand<SOUTHEAST>(n, heap);        
+        expand<SOUTHEAST>(n);        
         break;
     default:
         assert(false && "invalide node expansion");
@@ -125,14 +119,23 @@ inline void Solver<ST>::expand_node(rjps_node n, std::vector<rjps_node> &heap)
 
 template <SolverTraits ST>
 template <direction D>
-void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
+void Solver<ST>::expand(search_node cur)
 {
     using namespace ScanAttribute;
     static_assert(
 	    D == NORTHEAST || D == NORTHWEST || D == SOUTHEAST || D == SOUTHWEST,
 	    "D must be inter-cardinal.");
-    auto cur_coord = m_map.id_to_xy(cur.id);
-
+    auto cur_coord = m_map.id_to_xy(cur.state.id);
+    if constexpr(ST == SolverTraits::OutputToPosthoc)
+    {
+        m_tracer->expand(cur_coord, "orange", 
+            "expanding, h: " + to_string(cur.hval) +
+            " ,g: " + to_string(cur.gval) + 
+            " ,f: "+ to_string(cur.gval + cur.hval));
+        m_tracer->draw_bounds(cur_coord, cur.state.dir);
+    }
+    m_succ.clear();
+    m_stats.expanded++;
     //coord postion of ray intersec from shooting to target, potentially unused
     auto temp = pad_id{}, target_scan_start = temp;
     auto s_dir = scan_dir{};
@@ -140,25 +143,27 @@ void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
     //left octant and right octant
     constexpr Octants loct = get_left_octant<D>(), roct = get_right_octant<D>();
     //if target is in same quadrant, shoot to it
-    if(target_in_scan_quad(cur.id, cur.dir))
+    if(target_in_scan_quad(cur.state.id, cur.state.dir))
     {
         std::pair<bool, pad_id> vis_res;
         if(on_left_octant<D>(cur_coord, m_tcoord))
         {
-            vis_res = m_ray.check_target_visible<ST, loct>(cur.id, m_target, cur.dir);
+            vis_res = m_ray.check_target_visible<ST, loct>(cur.state.id, m_target, cur.state.dir);
         }
         else
         {
-            vis_res = m_ray.check_target_visible<ST, roct>(cur.id, m_target, cur.dir);
+            vis_res = m_ray.check_target_visible<ST, roct>(cur.state.id, m_target, cur.state.dir);
         }
         //if target is visible, return function
         if(vis_res.second == m_target)
         {
-            auto t = rjps_node{m_target, &m_node_map.find(uint64_t(cur.id))->second, m_map.id_to_xy(m_target), NONE};
-            t.hval = 0;
-            t.gval = m_heuristic.h(m_tcoord.first, m_tcoord.second, cur_coord.first, cur_coord.second) + cur.gval;
-            heap.emplace_back(t);
+            m_succ.emplace_back(m_target);
             return;
+            // auto t = search_node{m_target, &m_node_map.find(uint64_t(cur.state.id))->second, m_map.id_to_xy(m_target), NONE};
+            // t.hval = 0;
+            // t.gval = m_octile_h.h(m_tcoord.first, m_tcoord.second, cur_coord.first, cur_coord.second) + cur.state.gval;
+            // heap.emplace_back(t);
+            // return;
         }
         //save the coord of the blocking cell, then scan later from cell after getting the bounds for scanning
         else    
@@ -169,9 +174,9 @@ void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
             target_scan_start = vis_res.second;
         }
     }
-    temp = m_ray.shoot_diag_ray_id<ST>(cur.id, cur.dir);
+    temp = m_ray.shoot_diag_ray_id<ST>(cur.state.id, cur.state.dir);
     auto diag_bounds = m_map.id_to_xy(temp);
-    auto on_convex = init_scan_dir(temp, cur.dir, s_dir);
+    auto on_convex = init_scan_dir(temp, cur.state.dir, s_dir);
     auto cw_start = temp, ccw_start = temp;
     if(on_convex)
     {
@@ -185,18 +190,18 @@ void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
     //scan both ways from the point the ray intercepted
     //CW scan
     dir_info.init = s_dir.cw_init;
-    cwbound = scan_in_bound<CW, roct>(cw_start, cur, heap, cwbound, s_dir.cw_init);
+    cwbound = scan_in_bound<CW, roct>(cw_start, cur, cwbound, s_dir.cw_init);
     // dir_info.jps = s_dir.cw_jps;
     // dir_info.subseq = s_dir.cw_subseq;
-    // dir_info.terminate = rotate_eighth<Orientation::CCW>(cur.dir);
+    // dir_info.terminate = rotate_eighth<Orientation::CCW>(cur.state.dir);
     // uint32_t cwbound = scan_in_bound<Orientation::CW>(cw_start, cur, heap, cur_coord.first, cur_coord.second, dir_info);
 
     //CCW scan
     dir_info.init = s_dir.ccw_init;
-    ccwbound = scan_in_bound<CCW, loct>(ccw_start, cur, heap, ccwbound, s_dir.ccw_init);
+    ccwbound = scan_in_bound<CCW, loct>(ccw_start, cur, ccwbound, s_dir.ccw_init);
     // dir_info.jps = s_dir.ccw_jps;
     // dir_info.subseq = s_dir.ccw_subseq;
-    // dir_info.terminate = rotate_eighth<Orientation::CW>(cur.dir);
+    // dir_info.terminate = rotate_eighth<Orientation::CW>(cur.state.dir);
     // uint32_t ccwbound = scan_in_bound<Orientation::CCW>(ccw_start, cur, heap, cur_coord.first, cur_coord.second, dir_info);
 
     if(target_blocked)[[unlikely]]
@@ -208,34 +213,35 @@ void Solver<ST>::expand(rjps_node cur, std::vector<rjps_node> &heap)
             if constexpr (horizontally_bound(loct)) {cw_bound = diag_bounds.first, ccw_bound = cur_coord.first;}
             else                                    {cw_bound = diag_bounds.second, ccw_bound = cur_coord.second;}
             
-            scan_in_bound<CW, loct> (target_scan_start, cur, heap, cw_bound, get_subseq_dir<CW, loct>());
-            scan_in_bound<CCW, loct>(target_scan_start, cur, heap, ccw_bound, get_subseq_dir<CCW, loct>());
+            scan_in_bound<CW, loct> (target_scan_start, cur, cw_bound, get_subseq_dir<CW, loct>());
+            scan_in_bound<CCW, loct>(target_scan_start, cur, ccw_bound, get_subseq_dir<CCW, loct>());
         }
         else    
         {
             if constexpr (horizontally_bound(roct)) {cw_bound = cur_coord.first, ccw_bound = diag_bounds.first;}
             else                                    {cw_bound = cur_coord.second, ccw_bound = diag_bounds.second;}
-            scan_in_bound<CW, roct> (target_scan_start, cur, heap, cw_bound, get_subseq_dir<CW, roct>());
-            scan_in_bound<CCW, roct>(target_scan_start, cur, heap, ccw_bound, get_subseq_dir<CCW, roct>());
+            scan_in_bound<CW, roct> (target_scan_start, cur, cw_bound, get_subseq_dir<CW, roct>());
+            scan_in_bound<CCW, roct>(target_scan_start, cur, ccw_bound, get_subseq_dir<CCW, roct>());
         }
     }
 
     //CW scan from left extremety(left of scan center)
     dir_info.init = s_dir.cw_jps;
-    temp = m_ray.shoot_rjps_ray<ST>(cur.id, s_dir.ccw_jps, heap, cur);
-    scan_in_bound<CW, loct>(temp, cur, heap, ccwbound, s_dir.cw_jps);
+    temp = m_ray.shoot_rjps_ray<ST>(cur.state.id, s_dir.ccw_jps, m_succ);
+    scan_in_bound<CW, loct>(temp, cur, ccwbound, s_dir.cw_jps);
     
     //CCW scan from right extremety(right of scan center)
     dir_info.init = s_dir.ccw_jps;
-    temp = m_ray.shoot_rjps_ray<ST>(cur.id, s_dir.cw_jps, heap, cur);
-    scan_in_bound<CCW, roct>(temp, cur, heap, cwbound, s_dir.ccw_jps);
+    temp = m_ray.shoot_rjps_ray<ST>(cur.state.id, s_dir.cw_jps, m_succ);
+    scan_in_bound<CCW, roct>(temp, cur, cwbound, s_dir.ccw_jps);
 }
 
 template <SolverTraits ST>
-void Solver<ST>::query(pad_id start, pad_id target)
+void Solver<ST>::get_path(pad_id start, pad_id target)
 {
     m_stats = experiment_result{};
-    m_node_map.clear();
+    m_pq.clear();
+    m_all_node_list.clear();
     m_target = target;
     m_tcoord = m_map.id_to_xy(target);
     auto start_coord = m_map.id_to_xy(start);
@@ -243,92 +249,44 @@ void Solver<ST>::query(pad_id start, pad_id target)
     {
         m_tracer->init(start_coord, m_tcoord);
     }
-    auto cmp = [](rjps_node a, rjps_node b){return (a.gval + a.hval) > (b.gval + b.hval);};
-    auto fheap = boost::heap::fibonacci_heap<rjps_node, boost::heap::compare<cmp_min_rjps_node>>();
-    std::vector<rjps_node> heap{};
-    heap.reserve(2048);
-
-    auto test = target_in_scan_quad(m_map.xy_to_id(147, 107), SOUTHEAST);
-
+    auto cmp = [](search_node a, search_node b){return (a.gval + a.hval) > (b.gval + b.hval);};
+    m_succ.reserve(2048);
     m_timer.start();
-    auto start_node = rjps_node{start, nullptr, m_map.id_to_xy(start), NONE};
-    start_node.gval = 0;
-    // start_node.hval = m_heuristic.h(start_coord.first, start_coord.second, m_tcoord.first, m_tcoord.second);
+    auto start_state = rjps_state{};
+    start_state.id  = start;
+    start_state.dir = NORTHEAST;  
+    insert_start_state(start_state);
+    start_state.dir = NORTHWEST;
+    insert_start_state(start_state);
+    start_state.dir = SOUTHEAST;
+    insert_start_state(start_state);
+    start_state.dir = SOUTHWEST;
+    insert_start_state(start_state);
+    while(!m_pq.empty())
     {
-    start_node.dir = NORTHEAST;
-    start_node.hval = interval_h(start_node);
-    heap.push_back(start_node);
-        
-    start_node.dir = NORTHWEST;
-    start_node.hval = interval_h(start_node);
-    heap.push_back(start_node);
-
-    start_node.dir = SOUTHEAST;
-    start_node.hval = interval_h(start_node);
-    heap.push_back(start_node);
-
-    start_node.dir = SOUTHWEST;
-    start_node.hval = interval_h(start_node);
-    heap.push_back(start_node);
-    // start_node.quad_mask = (direction)UINT8_MAX;    // == 11111111
-    m_node_map.try_emplace((uint64_t)start_node.id, start_node);
-    }
-    std::make_heap(heap.begin(), heap.end(), cmp);
-    int iter = 0;
-    while(!heap.empty())
-    {
-        // if(iter++; iter > 2500)
-        // {
-        //     std::cout<<"limit exceed\n";
-        //     m_stats.plenth = DBL_MAX; return;
-        // }
         //pop the node with lowest fval off the heap
-        auto cur = heap.front();
-        auto cur_coord = m_map.id_to_xy(cur.id);
-        if(cur.id == m_target)
+        auto cur = m_pq.top();
+        // std::cout << (cur.gval + cur.hval)<<'\n';
+        if(cur.state.id == m_target)
         {
             m_stats.nanos = m_timer.elapsed_time_nano();
+            m_stats.plenth = cur.gval;
             break;
         }
-        std::pop_heap(heap.begin(), heap.end(), cmp); m_stats.heap_pops++;
-        heap.pop_back();
-        auto &node_in_closed = m_node_map.find((uint64_t)cur.id)->second;
-        if(rjps_node::quad_closed(node_in_closed, cur.dir))
-        {
-            continue;
-        }
-        //record heap size, if heap size changed during expansion, heap invalidated
-        auto tmp_size = heap.size();
-        if constexpr(ST == SolverTraits::OutputToPosthoc)
-        {
-            m_tracer->expand(cur_coord, "orange", "expanding, g: " + to_string(cur.gval) + " ,f: "+ to_string(cur.gval + cur.hval));
-            m_tracer->draw_bounds(cur_coord, cur.dir);
-        }
-        expand_node(cur, heap); m_stats.expanded++;
-        if(heap.size() > tmp_size)
-        {
-            //newly generated nodes are appended to the heap, they're not yet initialized
-            init_rjps_nodes(heap, cur, tmp_size);
-            m_stats.generated += heap.size() - tmp_size;
-            if constexpr(ST == SolverTraits::OutputToPosthoc)
-            {
-                for(auto i = tmp_size; i < heap.size(); i++)
-                {
-                    m_tracer->expand(m_map.id_to_xy(heap[i].id), "fuchsia", "generating, g: " + to_string(heap[i].gval) + " ,f: "+ to_string(heap[i].gval + heap[i].hval) + ", dir:" + to_string(heap[i].dir));
-                }
-            }
-            //reconsolidate heap
-            std::make_heap(heap.begin(), heap.end(), cmp);
-        }
-        rjps_node::close_quad(node_in_closed, cur.dir);
+        m_pq.pop();
+        // std::cout << (cur.gval + cur.hval)<< " id: " << to_string((uint64_t)cur.state.id) << " size: " +to_string(m_pq.size())+'\n';
+        auto cur_coord = m_map.id_to_xy(cur.state.id);
+        expand_node(cur);
+        auto cur_ptr = &m_all_node_list[cur.get_key()];   //pass the cur node pointer for successors
+        cur_ptr->closed = true;
+        generate(cur_ptr);
         if constexpr(ST == SolverTraits::OutputToPosthoc)
         {
             m_tracer->close_node(cur_coord);
         }
     }
-    auto c = heap.front();
-    m_stats.plenth = c.gval;
-    auto stk = std::stack<rjps_node>{};
+    auto c = m_pq.top();
+    auto stk = std::stack<search_node>{};
     stk.push(c);
     auto p = c.parent;
     while (p != nullptr)
@@ -341,7 +299,7 @@ void Solver<ST>::query(pad_id start, pad_id target)
     while (!stk.empty())
     {
         const auto &cur = stk.top();
-        // m_ray.shoot_to_target(cur.parent->id, cur.id, cur.parent->dir);
+        // m_ray.check_target_visible(cur.parent->state.id, cur.state.id, cur.parent->state.dir);
         stk.pop();
     }
     if constexpr(ST == SolverTraits::OutputToPosthoc)
@@ -429,20 +387,12 @@ pad_id Solver<ST>::grid_ray_incident(pad_id from, pad_id to, direction d)
 }
 
 template <SolverTraits ST>
-void Solver<ST>::init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size_t prev_end)
+inline void Solver<ST>::generate(search_node* parent)
 {
-    const auto &parent_node = m_node_map.find((uint64_t)parent.id);
-    
-    assert(parent_node != m_node_map.end());
     auto top_adj = direction{}, bottom_adj = top_adj;
-    auto t_coord = m_map.id_to_xy(m_target);
-    for(auto i = prev_end, j = heap.size(); i<j; i++)
-    {
-        auto &node = heap[i];
-        //gval should be the shortest path from parent, since path is taut
-        node.gval = m_heuristic.h(node.id.id, parent.id.id) + parent_node->second.gval;
-        // node.hval = m_heuristic.h(node.id.id, m_target.id);
-        switch (node.dir)
+    for(rjps_state& succ : m_succ)
+    {        
+        switch (succ.dir)
         {
         case NORTH:
             top_adj = SOUTHWEST; bottom_adj = SOUTHEAST;
@@ -457,81 +407,109 @@ void Solver<ST>::init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size
             top_adj = NORTHEAST; bottom_adj = SOUTHEAST;
             break;
         default:
-            // assert(false);
-            if(node.id == m_target) return;
+            if(succ.id == m_target) 
+            {
+                auto n = search_node{succ};
+                n.parent = parent;
+                n.hval = 0;
+                n.gval = m_octile_h.h(n.state.id.id, parent->state.id.id) + parent->gval;
+                m_pq.push(n);
+                return;
+            }
+            else assert(false && "successor dir is NONE");
         }
-        bool top = !m_map.get(shift_in_dir(node.id, 1, top_adj, m_map));
-        bool bottom = !m_map.get(shift_in_dir(node.id, 1, bottom_adj, m_map));
+        bool top = !m_map.get(shift_in_dir(succ.id, 1, top_adj, m_map));
+        bool bottom = !m_map.get(shift_in_dir(succ.id, 1, bottom_adj, m_map));
         if(top && bottom) [[unlikely]]
         {
-            auto tmp_dir = node.dir;
-            const auto &q = quad.find(to_string(parent.dir) + to_string(node.dir) + to_string(true));
-            assert(q != quad.end());
-            node.dir = q->second;
-            node.hval = interval_h(node);            
-            heap.push_back(node);
-
-            auto node_cpy = node;
-            const auto &q2 = quad.find(to_string(parent.dir) + to_string(tmp_dir) + to_string(false));
-            assert(q2 != quad.end());
-            node_cpy.dir = q2->second;
-            node_cpy.hval = interval_h(node_cpy);
-            heap.push_back(node_cpy);
+            auto aux_succ = succ;
+            succ.dir = quad.at(to_string(parent->state.dir) + to_string(succ.dir) + to_string(true));
+            insert(succ, parent);
+            aux_succ.dir = quad.at(to_string(parent->state.dir) + to_string(aux_succ.dir) + to_string(false));
+            insert(aux_succ, parent);
         }
         else if(top)
         {
-            const auto &q = quad.find(to_string(parent.dir) + to_string(node.dir) + to_string(true));
-            assert(q != quad.end());
-            node.dir = q->second;
-            node.hval = interval_h(node);            
+            succ.dir = quad.at(to_string(parent->state.dir) + to_string(succ.dir) + to_string(true));
+            insert(succ, parent);
         }
         else
         {
-            const auto &q = quad.find(to_string(parent.dir) + to_string(node.dir) + to_string(false));
-            assert(q != quad.end());
-            node.dir = q->second;
-            node.hval = interval_h(node);            
+            succ.dir = quad.at(to_string(parent->state.dir) + to_string(succ.dir) + to_string(false));
+            insert(succ, parent);        
         }
     }
-    for(auto iter = prev_end; iter < heap.size();)
+}
+
+template <SolverTraits ST>
+void Solver<ST>::insert(rjps_state succ, search_node *pred)
+{
+    auto n = search_node{succ};
+    const auto exist = m_all_node_list.find(n.get_key());
+    n.parent = pred;
+    n.gval = m_octile_h.h(n.state.id.id, n.parent->state.id.id) + n.parent->gval;
+    if(exist == m_all_node_list.end())
     {
-        auto& cur = heap[iter];
-        //if node is not visited, push a copy into map(closed list) then continue
-        if(m_node_map.find(uint64_t(cur.id)) == m_node_map.end())
+        m_stats.generated++;
+        n.hval = interval_h(n.state);
+        m_tracer->expand(m_map.id_to_xy(n.state.id), "fuchsia", 
+            "generating, h: " + to_string(n.hval) +
+            " ,g: " + to_string(n.gval) + 
+            " ,f: "+ to_string(n.gval + n.hval) + 
+            " ,dir:" + to_string(n.state.dir));
+        boost::heap::fibonacci_heap<search_node>::handle_type h = m_pq.push(n);
+        (*h).handle = h;
+        auto err = m_all_node_list.emplace(std::make_pair(n.get_key(), *h));        
+        assert(err.second);
+    }
+    else
+    {
+        auto& e = exist->second;
+        if(n.gval < e.gval)
         {
-            cur.parent = &parent_node->second;
-            // cur.close_quad(cur.dir);
-            m_node_map.emplace((uint64_t)cur.id, cur);
-            ++iter;
-        }
-        else
-        {            
-            auto &node_in_map = m_node_map.find(uint64_t(cur.id))->second;
-            //
-            if(cur.gval <= node_in_map.gval)
+            if(e.closed)
             {
-                node_in_map.gval = cur.gval; 
-                node_in_map.parent = &parent_node->second;
-                if(rjps_node::quad_closed(node_in_map, cur.dir))
-                {
-                    std::swap(cur, heap.back());
-                    heap.pop_back();
-                    continue;
-                }
-                else
-                {
-                    // node_in_map.close_quad(cur.dir);
-                    ++iter;
-                }
+                m_stats.reopend++;
+                n.hval = e.hval;
+                boost::heap::fibonacci_heap<search_node>::handle_type h = m_pq.push(n);
+                (*h).handle = h;
+                exist->second = *h;
+                m_tracer->expand(m_map.id_to_xy(n.state.id), "red", 
+                    "re-opening, h: " + to_string(n.hval) +
+                    " ,g: " + to_string(n.gval) + 
+                    " ,f: "+ to_string(n.gval + n.hval) + 
+                    " ,dir:" + to_string(n.state.dir));
+                // assert(false && "reopeing not handled");
             }
             else
             {
-                std::swap(cur, heap.back());
-                heap.pop_back();
-                continue;
+                m_stats.updated++;
+                n.hval = e.hval;
+                e.gval = n.gval;
+                e.parent = n.parent;
+                m_tracer->expand(m_map.id_to_xy(n.state.id), "yellow", 
+                    "updating, h: " + to_string(n.hval) +
+                    " ,g: " + to_string(n.gval) + 
+                    " ,f: "+ to_string(n.gval + n.hval) + 
+                    " ,dir:" + to_string(n.state.dir));
+                m_pq.decrease(e.handle, n);
             }
         }
     }
+}
+
+template <SolverTraits ST>
+inline void Solver<ST>::insert_start_state(const rjps_state& succ)
+{
+    auto n = search_node{succ};
+    n.gval = 0;
+    n.hval = interval_h(succ);
+    auto key = std::string(to_string((uint64_t)n.state.id) + to_string(n.state.dir));
+
+    boost::heap::fibonacci_heap<search_node>::handle_type h = m_pq.push(n);
+    (*h).handle = h;
+    auto err = m_all_node_list.emplace(std::make_pair(n.get_key(), *h));        
+    assert(err.second);
 }
 
 //Scans all visible obstacles in a set orientation, appends succesors to the vector passed in
@@ -542,256 +520,8 @@ void Solver<ST>::init_rjps_nodes(vector<rjps_node> &heap, rjps_node parent, size
 //@param ybound: y boundary
 //@param dir_info: collection of direction info which includes initial scan direction, subseq scan direction and terminating direction
 template <SolverTraits ST>
-template <ScanAttribute::Orientation O>
-uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t xbound, uint32_t ybound, DirectionInfo dir_info)
-{
-    auto ret = uint32_t{};
-    auto start_coord = m_map.id_to_xy(start);
-    using namespace ScanAttribute;
-    if constexpr (O == ScanAttribute::CW)
-    {
-        if(parent.dir == SOUTHEAST || parent.dir == NORTHWEST)
-        {
-            ret = start_coord.first;    //x
-        }
-        else    
-        {
-            ret = start_coord.second;   //y
-        }
-    }
-    else
-    {
-        if(parent.dir == NORTHEAST || parent.dir == SOUTHWEST)
-        {
-            ret = start_coord.first;    //x
-        }
-        else    
-        {
-            ret = start_coord.second;   //y
-        }
-    }
-    auto scan_res = scanResult{};
-    auto poi = pad_id{}, succ = poi;
-    scan_res.d = dir_info.init;
-    uint32_t dir_ind = std::countr_zero<uint8_t>(parent.dir)-4;
-    scan_res.top = init_scan_top[dir_ind][(scan_res.d == EAST || scan_res.d == WEST)];
-    poi = m_scanner.find_turning_point<ST>(start, scan_res, dir_info.terminate, xbound, ybound);
-    while (!poi.is_none())  // poi will be none if scan leaves bound, if not recurse scan
-    { 
-        auto ince = grid_ray_incident(parent.id, poi, parent.dir);
-        succ = m_ray.shoot_rjps_ray_to_target<ST>(ince, poi, dir_info.jps, vec, parent);
-        if constexpr(ST == SolverTraits::OutputToPosthoc)
-        {
-            m_tracer->trace_ray(m_map.id_to_xy(parent.id), m_map.id_to_xy(ince), "aqua", "shoot ray to point");
-            m_tracer->trace_ray(m_map.id_to_xy(ince), m_map.id_to_xy(succ), "aqua", "shoot ray to point");
-        }
-        //if poi is blocked by another obstacle, recurse scan in both orientation on collision point
-        //depending on the orientation and the quadrant, x or y bound is changed
-        if(succ != poi)
-        {
-            auto start_coord = m_map.id_to_xy(start);
-            if constexpr (O == ScanAttribute::CW)
-            {
-                auto cw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_ccw(dir_info.jps)};
-                auto ccw_dir_info = DirectionInfo{dir_flip(dir_info.subseq), dir_flip(dir_info.subseq), dir_info.jps, dir_cw(dir_info.jps)};
-                if(parent.dir == SOUTHEAST || parent.dir == NORTHWEST)  //x is the primary boundary
-                {
-                    ret = scan_in_bound<CW>(succ, parent, vec, xbound, ybound, cw_dir_info);
-                    scan_in_bound<CCW>(succ, parent, vec, start_coord.first, ybound, ccw_dir_info);
-                }
-                else                                                    //y is the primary boundary
-                {
-                    ret = scan_in_bound<CW>(succ, parent, vec, xbound, ybound, cw_dir_info);
-                    scan_in_bound<CCW>(succ, parent, vec, xbound, start_coord.second, ccw_dir_info);
-                }
-            }
-            else
-            {                
-                auto cw_dir_info = DirectionInfo{dir_flip(dir_info.subseq), dir_flip(dir_info.subseq), dir_info.jps, dir_ccw(dir_info.jps)};
-                auto ccw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_cw(dir_info.jps)};
-                if(parent.dir == NORTHEAST || parent.dir == SOUTHWEST)  //x is the primary boundary
-                {
-                    scan_in_bound<CW>(succ, parent, vec, start_coord.first, ybound, cw_dir_info);
-                    ret = scan_in_bound<CCW>(succ, parent, vec, xbound, ybound, ccw_dir_info);
-                }
-                else                                                    //y is the primary boundary    
-                {
-                    scan_in_bound<CW>(succ, parent, vec, xbound, start_coord.second, cw_dir_info);
-                    ret = scan_in_bound<CCW>(succ, parent, vec, xbound, ybound, ccw_dir_info);
-                }
-            }
-            return ret;
-        }
-        else    //poi is visible, shoot a jps ray towards it then continue scanning in orientation O
-        {
-            auto s_coord = m_map.id_to_xy(succ);
-            if constexpr (O == ScanAttribute::CW)
-            {
-                if(parent.dir == SOUTHEAST || parent.dir == NORTHWEST)
-                {
-                    ret = s_coord.first;
-                }
-                else    
-                {
-                    ret = s_coord.second;
-                }
-            }
-            else
-            {
-                if(parent.dir == NORTHEAST || parent.dir == SOUTHWEST)
-                {
-                    ret = s_coord.first;
-                }
-                else    
-                {
-                    ret = s_coord.second;
-                }
-            }
-            //if the turning point was a concave point, continue scan from the next first convex point returned
-            if(scan_res.on_concave) 
-            {
-                succ = shift_in_dir(succ, 1, scan_res.d, m_map);                
-            }
-            //else continue the jps ray then scan in same direction
-            else
-            {
-                succ = m_ray.shoot_rjps_ray<ST>(succ, dir_info.jps, vec, parent);             
-                scan_res.d = dir_info.subseq;
-                scan_res.top = (dir_info.jps == NORTH || dir_info.jps == WEST);
-            }
-            poi = m_scanner.find_turning_point<ST>(succ, scan_res, dir_info.terminate, xbound, ybound);
-        }
-    }
-    return ret;
-}
-
-template <SolverTraits ST>
-template <ScanAttribute::Orientation O>
-uint32_t Solver<ST>::scan_in_bound_alt(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t xbound, uint32_t ybound, DirectionInfo dir_info)
-{
-    auto ret = uint32_t{};
-    using namespace ScanAttribute;
-    if constexpr (O == ScanAttribute::CW)
-    {
-        if(parent.dir == SOUTHEAST || parent.dir == NORTHWEST)
-        {
-            ret = xbound;
-        }
-        else    
-        {
-            ret = ybound;
-        }
-    }
-    else
-    {
-        if(parent.dir == NORTHEAST || parent.dir == SOUTHWEST)
-        {
-            ret = xbound;
-        }
-        else    
-        {
-            ret = ybound;
-        }
-    }
-    auto scan_res = scanResult{};
-    auto poi = pad_id{}, succ = poi;
-    scan_res.d = dir_info.init;
-    uint32_t dir_ind = std::countr_zero<uint8_t>(parent.dir)-4;
-    scan_res.top = init_scan_top[dir_ind][(scan_res.d == EAST || scan_res.d == WEST)];
-    poi = m_scanner.find_turning_point<ST>(start, scan_res, dir_info.terminate, xbound, ybound);
-    while (!poi.is_none())  // poi will be none if scan leaves bound, if not recurse scan
-    { 
-        auto ince = grid_ray_incident(parent.id, poi, parent.dir);
-        succ = m_ray.shoot_rjps_ray_to_target<ST>(ince, poi, dir_info.jps, vec, parent);
-        if constexpr(ST == SolverTraits::OutputToPosthoc)
-        {
-            m_tracer->trace_ray(m_map.id_to_xy(parent.id), m_map.id_to_xy(ince), "aqua", "shoot ray to point");
-            m_tracer->trace_ray(m_map.id_to_xy(ince), m_map.id_to_xy(succ), "aqua", "shoot ray to point");
-        }
-        //if poi is blocked by another obstacle, recurse scan in both orientation on collision point
-        //depending on the orientation and the quadrant, x or y bound is changed
-        if(succ != poi)
-        {
-            auto start_coord = m_map.id_to_xy(start);
-            if constexpr (O == ScanAttribute::CW)
-            {
-                auto cw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_ccw(dir_info.jps)};
-                auto ccw_dir_info = DirectionInfo{dir_flip(dir_info.subseq), dir_flip(dir_info.subseq), dir_info.jps, dir_cw(dir_info.jps)};
-                if(parent.dir == NORTHEAST || parent.dir == SOUTHWEST)  //x is the primary boundary
-                {
-                    ret = scan_in_bound<CW>(succ, parent, vec, xbound, ybound, cw_dir_info);
-                    scan_in_bound<CCW>(succ, parent, vec, start_coord.first, ybound, ccw_dir_info);
-                }
-                else                                                    //y is the primary boundary
-                {
-                    ret = scan_in_bound<CW>(succ, parent, vec, xbound, ybound, cw_dir_info);
-                    scan_in_bound<CCW>(succ, parent, vec, xbound, start_coord.second, ccw_dir_info);
-                }
-            }
-            else
-            {                
-                auto cw_dir_info = DirectionInfo{dir_flip(dir_info.subseq), dir_flip(dir_info.subseq), dir_info.jps, dir_ccw(dir_info.jps)};
-                auto ccw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_cw(dir_info.jps)};
-                if(parent.dir == SOUTHEAST || parent.dir == NORTHWEST)  //x is the primary boundary
-                {
-                    scan_in_bound<CW>(succ, parent, vec, start_coord.first, ybound, cw_dir_info);
-                    ret = scan_in_bound<CCW>(succ, parent, vec, xbound, ybound, ccw_dir_info);
-                }
-                else                                                    //y is the primary boundary    
-                {
-                    scan_in_bound<CW>(succ, parent, vec, xbound, start_coord.second, cw_dir_info);
-                    ret = scan_in_bound<CCW>(succ, parent, vec, xbound, ybound, ccw_dir_info);
-                }
-            }
-            return ret;
-        }
-        else    //poi is visible, shoot a jps ray towards it then continue scanning in orientation O
-        {
-            auto s_coord = m_map.id_to_xy(succ);
-            if constexpr (O == ScanAttribute::CW)
-            {
-                if(parent.dir == SOUTHEAST || parent.dir == NORTHWEST)
-                {
-                    ret = s_coord.first;
-                }
-                else    
-                {
-                    ret = s_coord.second;
-                }
-            }
-            else
-            {
-                if(parent.dir == NORTHEAST || parent.dir == SOUTHWEST)
-                {
-                    ret = s_coord.first;
-                }
-                else    
-                {
-                    ret = s_coord.second;
-                }
-            }
-            //if the turning point was a concave point, continue scan from the next first convex point returned
-            if(scan_res.on_concave) 
-            {
-                succ = shift_in_dir(succ, 1, scan_res.d, m_map);                
-            }
-            //else continue the jps ray then scan in same direction
-            else
-            {
-                succ = m_ray.shoot_rjps_ray<ST>(succ, dir_info.jps, vec, parent);             
-                scan_res.d = dir_info.subseq;
-                scan_res.top = (dir_info.jps == NORTH || dir_info.jps == WEST);
-            }
-            poi = m_scanner.find_turning_point<ST>(succ, scan_res, dir_info.terminate, xbound, ybound);
-        }
-    }
-    return ret;
-}
-
-
-template <SolverTraits ST>
 template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<rjps_node> &vec, uint32_t boundary, direction start_d)
+uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, uint32_t boundary, direction start_d)
 {
     using ScanAttribute::Octants;
     using namespace ScanAttribute;
@@ -810,7 +540,7 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<r
     auto scan_res = scanResult{};
     auto poi = pad_id{}, succ = poi;
     scan_res.d = start_d;
-    uint32_t dir_ind = std::countr_zero<uint8_t>(parent.dir)-4;
+    uint32_t dir_ind = std::countr_zero<uint8_t>(parent.state.dir)-4;
     scan_res.top = get_init_scan_top<Octant>(scan_res.d);
     if constexpr(horizontally_bound(Octant))    //x is the primary boundary
     {
@@ -824,11 +554,11 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<r
 
     while (!poi.is_none())  // poi will be none if scan leaves bound, if not recurse scan
     { 
-        auto ince = grid_ray_incident(parent.id, poi, parent.dir);
-        succ = m_ray.shoot_rjps_ray_to_target<ST>(ince, poi, dir_info.jps, vec, parent);
+        auto ince = grid_ray_incident(parent.state.id, poi, parent.state.dir);
+        succ = m_ray.shoot_rjps_ray_to_target<ST>(ince, poi, dir_info.jps, m_succ);
         if constexpr(ST == SolverTraits::OutputToPosthoc)
         {
-            m_tracer->trace_ray(m_map.id_to_xy(parent.id), m_map.id_to_xy(ince), "aqua", "shoot ray to point");
+            m_tracer->trace_ray(m_map.id_to_xy(parent.state.id), m_map.id_to_xy(ince), "aqua", "shoot ray to point");
             m_tracer->trace_ray(m_map.id_to_xy(ince), m_map.id_to_xy(succ), "aqua", "shoot ray to point");
         }
         //if poi is blocked by another obstacle, recurse scan in both orientation on collision point
@@ -845,8 +575,8 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<r
             {
                 cw_bound = scan_frontier;
             }
-            cw_frontier =  scan_in_bound<CW, Octant>(succ, parent, vec, cw_bound, get_subseq_dir<CW, Octant>());
-            ccw_frontier = scan_in_bound<CCW, Octant>(succ, parent, vec, ccw_bound, get_subseq_dir<CCW, Octant>());
+            cw_frontier =  scan_in_bound<CW, Octant>(succ, parent, cw_bound, get_subseq_dir<CW, Octant>());
+            ccw_frontier = scan_in_bound<CCW, Octant>(succ, parent, ccw_bound, get_subseq_dir<CCW, Octant>());
             return O == Orientation::CW ? cw_frontier : ccw_frontier;
         }
         //poi is visible, shoot a jps ray towards it then continue scanning in orientation O
@@ -866,7 +596,7 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<r
             {
                 //since poin is guranteed to be a jump point(turning point), shoot a jps ray towards it to push it onto the heap
                 //along with all jump points along the way. TODO: extra jump points might be unnecessary?
-                poi = m_ray.shoot_rjps_ray<ST>(poi, dir_info.jps, vec, parent);             
+                poi = m_ray.shoot_rjps_ray<ST>(poi, dir_info.jps, m_succ);             
                 scan_res.d = dir_info.subseq;
                 scan_res.top = (dir_info.jps == NORTH || dir_info.jps == WEST);
             }
@@ -884,21 +614,22 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, rjps_node parent, std::vector<r
 }
 
 template <SolverTraits ST>
-inline double Solver<ST>::interval_h(rjps_node cur)
+double Solver<ST>::interval_h(const rjps_state& v)
 {
     //if the target resides inside scanning sector, return regular octile heuristic
-    if (target_in_scan_quad(cur.id, cur.dir))
+    // return m_octile_h.h(v.id.id, m_target.id);
+    if (target_in_scan_quad(v.id, v.dir))
     {
-        return m_heuristic.h(cur.id.id, m_target.id);
+        return m_octile_h.h(v.id.id, m_target.id);
     }
     
     double hx = 0, hy = 0;
     auto hori_dir = direction{}, vert_dir = direction{};
     auto x_intv = pad_id{}, y_intv = x_intv;
-    vert_dir = (cur.dir == NORTHEAST || cur.dir == NORTHWEST) ? NORTH : SOUTH;
-    hori_dir = (cur.dir == NORTHEAST || cur.dir == SOUTHEAST) ? EAST : WEST;
+    vert_dir = (v.dir == NORTHEAST || v.dir == NORTHWEST) ? NORTH : SOUTH;
+    hori_dir = (v.dir == NORTHEAST || v.dir == SOUTHEAST) ? EAST : WEST;
 
-    auto jump = m_jps->jump_cardinal(vert_dir, jps_id{cur.id.id}, m_jps->id_to_rid(jps_id{cur.id.id}));
+    auto jump = m_jps->jump_cardinal(vert_dir, jps_id{v.id}, m_jps->id_to_rid(jps_id{v.id}));
     hy += abs(jump.first);
     //if jump finds a turning point, jump.first will be positive, deadends will be negative
     //interval point will be either a turning point if one is found, otherwise the first point that leaves the obstacle in x direction
@@ -911,7 +642,7 @@ inline double Solver<ST>::interval_h(rjps_node cur)
         hy += r.first + DBL_ROOT_TWO;
     }
 
-    jump = m_jps->jump_cardinal(hori_dir, jps_id{cur.id.id}, m_jps->id_to_rid(jps_id{cur.id.id}));
+    jump = m_jps->jump_cardinal(hori_dir, jps_id{v.id}, m_jps->id_to_rid(jps_id{v.id}));
     hx += abs(jump.first);
     if(jump.first > 0) x_intv = jump.second; 
     else
@@ -920,12 +651,12 @@ inline double Solver<ST>::interval_h(rjps_node cur)
         x_intv = r.second;
         hx += r.first + DBL_ROOT_TWO;
     }
-    hx += m_heuristic.h(x_intv.id, m_target.id);
-    hy += m_heuristic.h(y_intv.id, m_target.id);
+    hx += m_octile_h.h(x_intv.id, m_target.id);
+    hy += m_octile_h.h(y_intv.id, m_target.id);
     if constexpr(ST == SolverTraits::OutputToPosthoc)
     {
-        m_tracer->expand(m_map.id_to_xy(x_intv), "orange", "intx, h: " + to_string(hx));
-        m_tracer->expand(m_map.id_to_xy(y_intv), "orange", "inty, h: " + to_string(hy));
+        m_tracer->draw_cell(m_map.id_to_xy(x_intv), "orange", "intx, h: " + to_string(hx));
+        m_tracer->draw_cell(m_map.id_to_xy(y_intv), "orange", "inty, h: " + to_string(hy));
     }
     return std::min(hx, hy);
 }
