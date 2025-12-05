@@ -2,95 +2,94 @@
 
 void Tracer::expand(uint32_t x, uint32_t y, string color, string type)
 {
-    expand(std::make_pair(x, y), color, type);
+    expand(point((int16_t)x, (int16_t)y), color, type);
 }
 
-void Tracer::expand(std::pair<uint32_t, uint32_t> p, string color, string type)
+void Tracer::expand(point p, string color, string type)
 {
-    auto x = uint32_t{p.first}, y = uint32_t{p.second};  
+    auto x = uint32_t{p.x}, y = uint32_t{p.y};  
     if (adj_for_padding)
     {
         y-=3;
     }
     std::string trace =
     "- { type: " + type + ", tag: grid" + ", color: " + color +
-    ", id: " + to_string(x) + ":" + to_string(y) + 
-    ", x: " + to_string(x) + ", y: " + to_string(y) + "}\n";
+    ", id: " + std::to_string(x) + ":" + std::to_string(y) + 
+    ", x: " + std::to_string(x) + ", y: " + std::to_string(y) + "}\n";
     m_trace << trace;
 }
-void Tracer::draw_cell(std::pair<uint32_t, uint32_t> p, string color, string type)
+void Tracer::draw_cell(point p, string color, string type)
 {
-    auto x = uint32_t{p.first}, y = uint32_t{p.second};  
+    auto x = uint32_t{p.x}, y = uint32_t{p.y};  
     if (adj_for_padding)
     {
         y-=3;
     }
     std::string trace =
     "- { type: " + type + ", tag: tempGrid" + ", color: " + color +
-    ", id: " + to_string(x) + ":" + to_string(y) + 
-    ", x: " + to_string(x) + ", y: " + to_string(y) + "}\n";
+    ", id: " + std::to_string(x) + ":" + std::to_string(y) + 
+    ", x: " + std::to_string(x) + ", y: " + std::to_string(y) + "}\n";
     m_trace << trace;
 }
 
-void Tracer::close_node(std::pair<uint32_t, uint32_t> p)
+void Tracer::close_node(point p)
 {
-    auto x = uint32_t{p.first}, y = uint32_t{p.second};  
+    auto x = uint32_t{p.x}, y = uint32_t{p.y};  
     if (adj_for_padding)
     {
         y-=3;
     }
     std::string trace =
     "- { type: close, tag: grid, color: green"
-    ", id: " + to_string(x) + ":" + to_string(y) + 
-    ", x: " + to_string(x) + ", y: " + to_string(y) + "}\n";
+    ", id: " + std::to_string(x) + ":" + std::to_string(y) + 
+    ", x: " + std::to_string(x) + ", y: " + std::to_string(y) + "}\n";
     m_trace << trace;
 }
 
-void Tracer::trace_ray(pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finish, string color, string type)
+void Tracer::trace_ray(point start, point finish, string color, string type)
 {
     if (adj_for_padding)
     {
-        start.second-=3;
-        finish.second-=3;
+        start.y-=3;
+        finish.y-=3;
     }
-    string s1 = to_string((int)finish.first - (int)start.first), s2 = to_string((int)finish.second - (int)start.second);
+    string s1 = std::to_string((int)finish.x - (int)start.x), s2 = std::to_string((int)finish.y - (int)start.y);
     std::string trace = 
     "- { type: " + type + ", tag: ray" + ", color: "+ color + 
-    ", x: " + to_string(start.first) + ", y: " + to_string(start.second) + 
+    ", x: " + std::to_string(start.x) + ", y: " + std::to_string(start.y) + 
     ", rayShootX: " +s1 + ", rayShootY: "+s2 + "}\n";
     m_trace << trace;
 }
 
-void Tracer::draw_bounds(std::pair<uint32_t, uint32_t> p, direction dir)
+void Tracer::draw_bounds(point p, direction_id dir)
 {
-    uint32_t dir_ind = std::countr_zero<uint8_t>(dir)-4;
-    auto xend = std::make_pair(p.first, adj[dir_ind][1] == -1 ? 0 : m_dim.height);
-    auto yend = std::make_pair(adj[dir_ind][0] == -1 ? 0 : m_dim.width, p.second);
+    auto xend = point(p.x, adj[dir].y == (int16_t)-1 ? 0 : m_dim.height);
+    auto yend = point(adj[dir].x == (int16_t)-1 ? 0 : m_dim.width, p.y);
     trace_ray_till_close(p, p, xend, "red", "x boundary");
     trace_ray_till_close(p, p, yend, "red", "y boundary");
 }
 
-void Tracer::trace_ray_till_close(std::pair<uint32_t, uint32_t> closeid, pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finish, string color, string type)
+void Tracer::trace_ray_till_close(point closeid, point start, point finish, string color, string type)
 {
     if (adj_for_padding)
     {
-        closeid.second-=3;
-        start.second-=3;
-        finish.second-=3;
+        closeid.y-=3;
+        start.y-=3;
+        finish.y-=3;
     }
-    string s1 = to_string((int)finish.first - (int)start.first), s2 = to_string((int)finish.second - (int)start.second);
+    string s1 = std::to_string((int)finish.x - (int)start.x), s2 = std::to_string((int)finish.y - (int)start.y);
     std::string trace = 
     "- { type: " + type + ", tag: tempRay" + ", color: "+ color + 
-    ", id: " + to_string(closeid.first) + ":" + to_string(closeid.second) + 
-    ", x: " + to_string(start.first) + ", y: " + to_string(start.second) + 
+    ", id: " + std::to_string(closeid.x) + ":" + std::to_string(closeid.y) + 
+    ", x: " + std::to_string(start.x) + ", y: " + std::to_string(start.y) + 
     ", rayShootX: " +s1 + ", rayShootY: "+s2 + "}\n";
     m_trace << trace;
 }
 
-void Tracer::init(pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finish)
+void Tracer::init(point start, point finish)
 {
     m_trace.clear();
-    auto sy = uint32_t{start.second}, fy = uint32_t{finish.second};    
+    auto sy = uint32_t{start.y}, fy = uint32_t{finish.y};    
     if (adj_for_padding)
     {
         sy-=3; fy-=3;
@@ -138,9 +137,9 @@ void Tracer::init(pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finis
     m_trace << header;
     string type;
     type = "source";
-    m_trace << "- { type: " << type << ", tag: grid"<< ", color: green" << ", id: " << to_string(start.first) + ":" + to_string(start.second) << ", x: " << start.first << ", y: " << sy << "}\n";
+    m_trace << "- { type: " << type << ", tag: grid"<< ", color: green" << ", id: " << std::to_string(start.x) + ":" + std::to_string(start.y) << ", x: " << start.x << ", y: " << sy << "}\n";
     type = "destination";
-    m_trace << "- { type: " << type << ", tag: grid"<< ", color: blue" <<", id: " << to_string(finish.first) + ":" + to_string(finish.second) << ", x: " << finish.first << ", y: " << fy << "}\n";
+    m_trace << "- { type: " << type << ", tag: grid"<< ", color: blue" <<", id: " << std::to_string(finish.x) + ":" + std::to_string(finish.y) << ", x: " << finish.x << ", y: " << fy << "}\n";
 }
 
 void Tracer::close()

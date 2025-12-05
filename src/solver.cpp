@@ -2,7 +2,7 @@
 
 // template <SolverTraits ST>
 // template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-// uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, std::vector<search_node> &vec, uint32_t boundary, DirectionInfo dir_info)
+// uint32_t Solver<ST>::scan_in_bound(grid_id start, search_node parent, std::vector<search_node> &vec, uint32_t boundary, DirectionInfo dir_info)
 // {
 //     using ScanAttribute::Octants;
 //     using ScanAttribute::ScanType;
@@ -19,10 +19,10 @@
 //         ret = start_coord.second;   //y
 //     }
 //     auto scan_res = scanResult{};
-//     auto poi = pad_id{}, succ = poi;
+//     auto poi = grid_id{}, succ = poi;
 //     scan_res.d = dir_info.init;
 //     uint32_t dir_ind = std::countr_zero<uint8_t>(parent.dir)-4;
-//     scan_res.top = init_scan_top[dir_ind][(scan_res.d == EAST || scan_res.d == WEST)];
+//     scan_res.top = init_scan_top[dir_ind][(scan_res.d == EAST_ID || scan_res.d == WEST_ID)];
 //     if constexpr(horizontally_bound(Octant))    //x is the primary boundary
 //     {
 //         poi = m_scanner.find_turning_point(start, scan_res, dir_info.terminate, boundary, UINT32_MAX);
@@ -46,8 +46,8 @@
 //         {
 //             auto start_coord = m_map.id_to_xy(start);
 //             uint32_t cw_frontier = 0, ccw_frontier = 0, cw_bound = boundary, ccw_bound = boundary;
-//             auto cw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_ccw(dir_info.jps)};
-//             auto ccw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_cw(dir_info.jps)};
+//             auto cw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_id_ccw90(dir_info.jps)};
+//             auto ccw_dir_info = DirectionInfo{dir_info.subseq, dir_info.subseq, dir_info.jps, dir_id_cw90(dir_info.jps)};
 //             if constexpr (O == ScanAttribute::CW)
 //             {
 //                 ccw_dir_info.init = dir_flip(dir_info.subseq); ccw_dir_info.subseq = dir_flip(dir_info.subseq); 
@@ -102,7 +102,7 @@
 //                 //along with all jump points along the way. TODO: extra jump points might be unnecessary?
 //                 poi = m_ray.shoot_rjps_ray(poi, dir_info.jps, vec, parent);             
 //                 scan_res.d = dir_info.subseq;
-//                 scan_res.top = (dir_info.jps == NORTH || dir_info.jps == WEST);
+//                 scan_res.top = (dir_info.jps == NORTH_ID || dir_info.jps == WEST_ID);
 //             }
 //             if constexpr(horizontally_bound(Octant))    //x is the primary boundary
 //             {
@@ -118,33 +118,33 @@
 // }
 
 // template <SolverTraits ST>
-// inline direction Solver<ST>::target_dir(pad_id start, pad_id target)
+// inline direction Solver<ST>::target_dir(grid_id start, grid_id target)
 // {
 //     auto c1 = m_map.id_to_xy(start), c2 = m_map.id_to_xy(target);
 //     uint32_t x = c1.first, y = c1.second, tx = c2.first, ty = c2.second;
 //     if(tx<x)
 //     {
-//         if(ty<y) return NORTHWEST;
-//         else     return SOUTHWEST;
+//         if(ty<y) return NORTHWEST_ID;
+//         else     return SOUTHWEST_ID;
 //     }
 //     else
 //     {
-//         if(ty<y) return NORTHEAST;
-//         else     return SOUTHEAST;
+//         if(ty<y) return NORTHEAST_ID;
+//         else     return SOUTHEAST_ID;
 //     }
 // }
 
 // template <SolverTraits ST>
-// bool Solver<ST>::init_scan_dir(pad_id start, direction p_dir, scan_dir &dir)
+// bool Solver<ST>::init_scan_dir(grid_id start, direction p_dir, scan_dir &dir)
 // {
 //     assert(
-//     p_dir == NORTHEAST || p_dir == NORTHWEST || p_dir == SOUTHEAST || p_dir == SOUTHWEST 
+//     p_dir == NORTHEAST_ID || p_dir == NORTHWEST_ID || p_dir == SOUTHEAST_ID || p_dir == SOUTHWEST_ID 
 //     && "Init scan direction: in dir must be intercardinal direction");
 //     auto dir_ind =std::countr_zero<uint8_t>(p_dir) - 4;
 //     auto adjx = adj[dir_ind][0], adjy = adj[dir_ind][1];
 //     bool vert, hori, ret = false;
-//     vert = m_map.get(pad_id{start.id + adjy * (int32_t)m_map.width()});
-//     hori = m_map.get(pad_id{start.id + adjx});
+//     vert = m_map.get(grid_id{start.id + adjy * (int32_t)m_map.width()});
+//     hori = m_map.get(grid_id{start.id + adjx});
 //     if(vert) //vert not blocked
 //     {
 //         if(hori) //convex point
@@ -183,7 +183,7 @@
 // void Solver<ST>::expand(search_node cur, std::vector<search_node> &heap)
 // {
 //     auto cur_coord = m_map.id_to_xy(cur.id);
-//     auto temp = pad_id{};
+//     auto temp = grid_id{};
 //     auto s_dir = scan_dir{};
 //     //if target is in same quadrant, shoot to it
 //     if(target_dir(cur.id, m_target) == cur.dir)
@@ -225,7 +225,7 @@
 
 //     //CW scan from left extremety(left of scan center)
 //     auto xbound = uint32_t{}, ybound = xbound;
-//     if(cur.dir == NORTHEAST || cur.dir == SOUTHWEST)
+//     if(cur.dir == NORTHEAST_ID || cur.dir == SOUTHWEST_ID)
 //     {
 //         xbound = ccwbound;
 //         ybound = cur_coord.second;
@@ -238,13 +238,13 @@
 //     dir_info.init = s_dir.cw_jps;
 //     dir_info.jps =  rotate_eighth<ScanAttribute::CCW>(cur.dir);
 //     dir_info.subseq = s_dir.cw_jps;
-//     dir_info.terminate = dir_ccw(dir_info.jps);
+//     dir_info.terminate = dir_id_ccw90(dir_info.jps);
 //     temp = m_ray.shoot_rjps_ray(cur.id, s_dir.ccw_jps, heap, cur);
 //     //IF FIRST CCW SCAN FAILS, CCWBOUND WILL STAY THE SAME AS ORIGINAL BOUND THEREFORE SHORTCIRCUIT
 //     scan_in_bound_alt<ScanAttribute::CW>(temp, cur, heap, xbound, ybound, dir_info);
     
 //     //CCW scan from right extremety(right of scan center)
-//     if(cur.dir == NORTHWEST || cur.dir == SOUTHEAST)
+//     if(cur.dir == NORTHWEST_ID || cur.dir == SOUTHEAST_ID)
 //     {
 //         xbound = cwbound;
 //         ybound = cur_coord.second;
@@ -258,14 +258,14 @@
 //     dir_info.init = s_dir.ccw_jps;
 //     dir_info.jps =  rotate_eighth<ScanAttribute::CW>(cur.dir);
 //     dir_info.subseq = s_dir.ccw_jps;
-//     dir_info.terminate = dir_cw(dir_info.jps);;
+//     dir_info.terminate = dir_id_cw90(dir_info.jps);;
 //     temp = m_ray.shoot_rjps_ray(cur.id, s_dir.cw_jps, heap, cur);
 //     scan_in_bound_alt<ScanAttribute::CCW>(temp, cur, heap, xbound, ybound, dir_info);
 // }
 
 
 // template <SolverTraits ST>
-// pad_id Solver<ST>::grid_ray_incident(pad_id from, pad_id to, direction d)
+// grid_id Solver<ST>::grid_ray_incident(grid_id from, grid_id to, direction d)
 // {
 //     auto f_coord = m_map.id_to_xy(from), t_coord = m_map.id_to_xy(to);
 //     auto m = min(abs((int)f_coord.first - (int)t_coord.first), abs((int)f_coord.second - (int)t_coord.second));
@@ -289,17 +289,17 @@
 //         node.hval = m_octile_h.h(cur_coord.first, cur_coord.second, t_coord.first, t_coord.second);
 //         switch (node.dir)
 //         {
-//         case NORTH:
-//             top_adj = SOUTHWEST; bottom_adj = SOUTHEAST;
+//         case NORTH_ID:
+//             top_adj = SOUTHWEST_ID; bottom_adj = SOUTHEAST_ID;
 //             break;
-//         case SOUTH:
-//             top_adj = NORTHWEST; bottom_adj = NORTHEAST;
+//         case SOUTH_ID:
+//             top_adj = NORTHWEST_ID; bottom_adj = NORTHEAST_ID;
 //             break;
-//         case EAST:
-//             top_adj = NORTHWEST; bottom_adj = SOUTHWEST;
+//         case EAST_ID:
+//             top_adj = NORTHWEST_ID; bottom_adj = SOUTHWEST_ID;
 //             break;
-//         case WEST:
-//             top_adj = NORTHEAST; bottom_adj = SOUTHEAST;
+//         case WEST_ID:
+//             top_adj = NORTHEAST_ID; bottom_adj = SOUTHEAST_ID;
 //             break;
 //         default:
 //             if(node.id == m_target) return;

@@ -1,6 +1,7 @@
 //a colletion of definitions/utils used in rjps algorithm
 #pragma once
 #include <jps/jump/jump_point_online.h>
+#include <jps/domain/rotate_gridmap.h>
 #include <bitset>
 #include <algorithm>
 #include <map>
@@ -13,6 +14,7 @@
 
 // typedef typename boost::heap::fibonacci_heap<>::handle_type handle_t;
 using namespace warthog::domain;
+using namespace jps::domain;
 using namespace jps;
 
 enum Domain
@@ -29,12 +31,12 @@ enum class SolverTraits
 
 struct rjps_state
 {
-    pad_id      id = pad_id::none();
-    direction   dir = direction::NONE;
-    direction   quad_mask = direction::NONE;
+    grid_id      id = grid_id::none();
+    direction_id   dir = {};
+    direction_id   quad_mask = {};
 
-    rjps_state(pad_id _v) : id(_v){};
-    rjps_state(pad_id _v, direction _d) : id(_v), dir(_d){};
+    rjps_state(grid_id _v) : id(_v){};
+    rjps_state(grid_id _v, direction_id _d) : id(_v), dir(_d){};
     rjps_state(){};
 };
 
@@ -88,168 +90,168 @@ enum Octants
     WSW
 };
 
-template <direction D>
-static inline bool on_left_octant(std::pair<uint32_t, uint32_t> f, std::pair<uint32_t, uint32_t> t)
+template <direction_id D>
+static inline bool on_left_octant(point f, point t)
 {
     static_assert(
-    D == NORTHEAST || D == NORTHWEST || D == SOUTHEAST || D == SOUTHWEST,
+    D == NORTHEAST_ID || D == NORTHWEST_ID || D == SOUTHEAST_ID || D == SOUTHWEST_ID,
     "D must be inter-cardinal.");
-    int dx = std::abs((int)t.first - (int)f.first), dy = std::abs((int)t.second - (int)f.second);
+    int dx = std::abs((int)t.x - (int)f.x), dy = std::abs((int)t.y - (int)f.y);
     using ScanAttribute::Octants;
-    if      constexpr(D == NORTHEAST || D == SOUTHWEST)
+    if      constexpr(D == NORTHEAST_ID || D == SOUTHWEST_ID)
     {
         return(dy > dx);
     }
-    else if constexpr(D == NORTHWEST || D == SOUTHEAST)
+    else if constexpr(D == NORTHWEST_ID || D == SOUTHEAST_ID)
     {
         return(dx > dy);
     }
 }
 
-template <direction D>
+template <direction_id D>
 constexpr Octants get_left_octant()
 {
     static_assert(
-	    D == NORTHEAST || D == NORTHWEST || D == SOUTHEAST || D == SOUTHWEST,
+	    D == NORTHEAST_ID || D == NORTHWEST_ID || D == SOUTHEAST_ID || D == SOUTHWEST_ID,
 	    "D must be inter-cardinal.");
     using ScanAttribute::Octants;
-    if      (D == NORTHEAST) return Octants::NNE;
-    else if (D == NORTHWEST) return Octants::WNW;
-    else if (D == SOUTHEAST) return Octants::ESE;
-    else if (D == SOUTHWEST) return Octants::SSW;
+    if      (D == NORTHEAST_ID) return Octants::NNE;
+    else if (D == NORTHWEST_ID) return Octants::WNW;
+    else if (D == SOUTHEAST_ID) return Octants::ESE;
+    else if (D == SOUTHWEST_ID) return Octants::SSW;
 }
 
-template <direction D>
+template <direction_id D>
 constexpr Octants get_right_octant()
 {
     static_assert(
-	    D == NORTHEAST || D == NORTHWEST || D == SOUTHEAST || D == SOUTHWEST,
+	    D == NORTHEAST_ID || D == NORTHWEST_ID || D == SOUTHEAST_ID || D == SOUTHWEST_ID,
 	    "D must be inter-cardinal.");
     using ScanAttribute::Octants;
-    if      (D == NORTHEAST) return Octants::ENE;
-    else if (D == NORTHWEST) return Octants::NNW;
-    else if (D == SOUTHEAST) return Octants::SSE;
-    else if (D == SOUTHWEST) return Octants::WSW;
+    if      (D == NORTHEAST_ID) return Octants::ENE;
+    else if (D == NORTHWEST_ID) return Octants::NNW;
+    else if (D == SOUTHEAST_ID) return Octants::SSE;
+    else if (D == SOUTHWEST_ID) return Octants::WSW;
 }
 
 template<ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-constexpr inline direction get_subseq_dir()
+constexpr inline direction_id get_subseq_dir()
 {
     using ScanAttribute::Octants;
     if constexpr (O == ScanAttribute::CW)
     {
         if constexpr(Octant == NNW || Octant == NNE)
         {
-            return EAST;
+            return EAST_ID;
         }
         else if constexpr(Octant == ENE || Octant == ESE)
         {
-            return SOUTH;
+            return SOUTH_ID;
         }
         else if constexpr(Octant == SSE || Octant == SSW)
         {
-            return WEST;
+            return WEST_ID;
         }
         else if constexpr(Octant == WSW || Octant == WNW)
         {
-            return NORTH;
+            return NORTH_ID;
         }
     }
     else
     {
         if constexpr(Octant == NNW || Octant == NNE)
         {
-            return WEST;
+            return WEST_ID;
         }
         else if constexpr(Octant == ENE || Octant == ESE)
         {
-            return NORTH;
+            return NORTH_ID;
         }
         else if constexpr(Octant == SSE || Octant == SSW)
         {
-            return EAST;
+            return EAST_ID;
         }
         else if constexpr(Octant == WSW || Octant == WNW)
         {
-            return SOUTH;
+            return SOUTH_ID;
         }
     }
 }
 
 template<ScanAttribute::Octants Octant>
-constexpr inline direction get_jps_dir()
+constexpr inline direction_id get_jps_dir()
 {
     using ScanAttribute::Octants;
     if constexpr(Octant == NNW || Octant == NNE)
     {
-       return NORTH;
+       return NORTH_ID;
     }
     else if constexpr(Octant == ENE || Octant == ESE)
     {
-       return EAST;
+       return EAST_ID;
     }
     else if constexpr(Octant == SSE || Octant == SSW)
     {
-       return SOUTH;
+       return SOUTH_ID;
     }
     else if constexpr(Octant == WSW || Octant == WNW)
     {
-       return WEST;
+       return WEST_ID;
     }
 }
 
 template<ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-constexpr inline direction get_terminate_dir()
+constexpr inline direction_id get_terminate_dir()
 {
     using ScanAttribute::Octants;
     if constexpr (O == ScanAttribute::CW)
     {
         if constexpr(Octant == NNE || Octant == NNW)
         {
-            return WEST;
+            return WEST_ID;
         }
         else if constexpr(Octant == ENE || Octant == ESE)
         {
-            return NORTH;
+            return NORTH_ID;
         }
         else if constexpr(Octant == SSE || Octant == SSW)
         {
-            return EAST;
+            return EAST_ID;
         }
         else if constexpr(Octant == WSW || Octant == WNW)
         {
-            return SOUTH;
+            return SOUTH_ID;
         }
     }
     else
     {
         if constexpr(Octant == NNE || Octant == NNW)
         {
-            return EAST;
+            return EAST_ID;
         }
         else if constexpr(Octant == ENE || Octant == ESE)
         {
-            return SOUTH;
+            return SOUTH_ID;
         }
         else if constexpr(Octant == SSE || Octant == SSW)
         {
-            return WEST;
+            return WEST_ID;
         }
         else if constexpr(Octant == WSW || Octant == WNW)
         {
-            return NORTH;
+            return NORTH_ID;
         }
     }
 }
 
 //helper function to determine if a comp stride is the top or not for scanning base on scan direction and octant
 template<ScanAttribute::Octants Octant>
-inline bool get_init_scan_top(direction scan_dir)
+inline bool get_init_scan_top(direction_id scan_dir)
 {
     using ScanAttribute::Octants;
-    if constexpr(Octant == NNE || Octant == ENE)        //northeast
+    if constexpr(Octant == NNE || Octant == ENE)        //NORTHEAST_ID
     {
-       return (scan_dir == EAST || scan_dir == WEST);
+       return (scan_dir == EAST_ID || scan_dir == WEST_ID);
     }
     else if constexpr(Octant == NNW || Octant == WNW)   //northwest
     {
@@ -261,7 +263,7 @@ inline bool get_init_scan_top(direction scan_dir)
     }
     else if constexpr(Octant == WSW || Octant == SSW)   //southwest
     {
-       return (scan_dir == NORTH || scan_dir == SOUTH);
+       return (scan_dir == NORTH_ID || scan_dir == SOUTH_ID);
     }
 }
 
@@ -275,91 +277,91 @@ inline constexpr bool horizontally_bound(Octants O)
 
 // auto dir_ind =std::countr_zero<uint8_t>(p_dir) - 4;
 
-// NORTHEAST 0
-// NORTHWEST 1
-// SOUTHEAST 2
-// SOUTHWEST 3
+// NORTHEAST_ID 0
+// NORTHWEST_ID 1
+// SOUTHEAST_ID 2
+// SOUTHWEST_ID 3
 // 0:vert, 1:hori
-static constexpr std::array<std::array<direction, 2>, 4>d_init_scan_CW{{
-{SOUTH, EAST}, 
-{NORTH, EAST}, 
-{SOUTH, WEST}, 
-{NORTH, WEST}}};
-// NORTHEAST 0
-// NORTHWEST 1
-// SOUTHEAST 2
-// SOUTHWEST 3
+static constexpr std::array<std::array<direction_id, 2>, 4>d_init_scan_CW{{
+{SOUTH_ID, EAST_ID}, 
+{NORTH_ID, EAST_ID}, 
+{SOUTH_ID, WEST_ID}, 
+{NORTH_ID, WEST_ID}}};
+// NORTHEAST_ID 0
+// NORTHWEST_ID 1
+// SOUTHEAST_ID 2
+// SOUTHWEST_ID 3
 // 0:vert, 1:hori
-static constexpr std::array<std::array<direction, 2>, 4>d_init_scan_CCW{{
-{NORTH, WEST}, 
-{SOUTH, WEST}, 
-{NORTH, EAST},
-{SOUTH, EAST}}};
-// NORTHEAST 0
-// NORTHWEST 1
-// SOUTHEAST 2
-// SOUTHWEST 3
+static constexpr std::array<std::array<direction_id, 2>, 4>d_init_scan_CCW{{
+{NORTH_ID, WEST_ID}, 
+{SOUTH_ID, WEST_ID}, 
+{NORTH_ID, EAST_ID},
+{SOUTH_ID, EAST_ID}}};
+// NORTHEAST_ID 0
+// NORTHWEST_ID 1
+// SOUTHEAST_ID 2
+// SOUTHWEST_ID 3
 // 0:CW, 1:CCW
 // direction of jps scan based on scan quadrant and scan orientation
-static constexpr std::array<std::array<direction, 2>, 4>d_jps{{
-{EAST, NORTH}, 
-{NORTH, WEST}, 
-{SOUTH, EAST}, 
-{WEST, SOUTH}}};
-// NORTHEAST 0
-// NORTHWEST 1
-// SOUTHEAST 2
-// SOUTHWEST 3
+static constexpr std::array<std::array<direction_id, 2>, 4>d_jps{{
+{EAST_ID, NORTH_ID}, 
+{NORTH_ID, WEST_ID}, 
+{SOUTH_ID, EAST_ID}, 
+{WEST_ID, SOUTH_ID}}};
+// NORTHEAST_ID 0
+// NORTHWEST_ID 1
+// SOUTHEAST_ID 2
+// SOUTHWEST_ID 3
 // 0:CW, 1:CCW
-static constexpr std::array<std::array<direction, 2>, 4>d_scan{{
-{SOUTH, WEST}, 
-{EAST, SOUTH}, 
-{WEST, NORTH}, 
-{NORTH, EAST}}};
+static constexpr std::array<std::array<direction_id, 2>, 4>d_scan{{
+{SOUTH_ID, WEST_ID}, 
+{EAST_ID, SOUTH_ID}, 
+{WEST_ID, NORTH_ID}, 
+{NORTH_ID, EAST_ID}}};
 
-static inline int get_succ_sector(direction parent_s, direction jps, bool top)
+static inline int get_succ_sector(direction_id parent_s, direction_id jps, bool top)
 {
     return ((int)top <<20 |(int) parent_s <<10 | (int)jps);
 }
 
 using namespace std;
-static const std::unordered_map<int, direction>quad{
-    {get_succ_sector(NORTHEAST, NORTH, true),  NORTHWEST},
-    {get_succ_sector(NORTHEAST, NORTH, false), NORTHEAST},
-    {get_succ_sector(NORTHEAST, EAST, true),  NORTHEAST},
-    {get_succ_sector(NORTHEAST, EAST, false),  SOUTHEAST},
+static const std::unordered_map<int, direction_id>quad{
+    {get_succ_sector(NORTHEAST_ID, NORTH_ID, true),  NORTHWEST_ID},
+    {get_succ_sector(NORTHEAST_ID, NORTH_ID, false), NORTHEAST_ID},
+    {get_succ_sector(NORTHEAST_ID, EAST_ID, true),  NORTHEAST_ID},
+    {get_succ_sector(NORTHEAST_ID, EAST_ID, false),  SOUTHEAST_ID},
 
-    {get_succ_sector(NORTHWEST, NORTH, true),  NORTHWEST},
-    {get_succ_sector(NORTHWEST, NORTH, false), NORTHEAST},
-    {get_succ_sector(NORTHWEST, WEST, true),  NORTHWEST},
-    {get_succ_sector(NORTHWEST, WEST, false),  SOUTHWEST},
+    {get_succ_sector(NORTHWEST_ID, NORTH_ID, true),  NORTHWEST_ID},
+    {get_succ_sector(NORTHWEST_ID, NORTH_ID, false), NORTHEAST_ID},
+    {get_succ_sector(NORTHWEST_ID, WEST_ID, true),  NORTHWEST_ID},
+    {get_succ_sector(NORTHWEST_ID, WEST_ID, false),  SOUTHWEST_ID},
 
-    {get_succ_sector(SOUTHEAST, SOUTH, true),  SOUTHWEST},
-    {get_succ_sector(SOUTHEAST, SOUTH, false), SOUTHEAST},
-    {get_succ_sector(SOUTHEAST, EAST, true),  NORTHEAST},
-    {get_succ_sector(SOUTHEAST, EAST, false),  SOUTHEAST},
+    {get_succ_sector(SOUTHEAST_ID, SOUTH_ID, true),  SOUTHWEST_ID},
+    {get_succ_sector(SOUTHEAST_ID, SOUTH_ID, false), SOUTHEAST_ID},
+    {get_succ_sector(SOUTHEAST_ID, EAST_ID, true),  NORTHEAST_ID},
+    {get_succ_sector(SOUTHEAST_ID, EAST_ID, false),  SOUTHEAST_ID},
 
-    {get_succ_sector(SOUTHWEST, SOUTH, true),  SOUTHWEST},
-    {get_succ_sector(SOUTHWEST, SOUTH, false), SOUTHEAST},
-    {get_succ_sector(SOUTHWEST, WEST, true),  NORTHWEST},
-    {get_succ_sector(SOUTHWEST, WEST, false),  SOUTHWEST}
+    {get_succ_sector(SOUTHWEST_ID, SOUTH_ID, true),  SOUTHWEST_ID},
+    {get_succ_sector(SOUTHWEST_ID, SOUTH_ID, false), SOUTHEAST_ID},
+    {get_succ_sector(SOUTHWEST_ID, WEST_ID, true),  NORTHWEST_ID},
+    {get_succ_sector(SOUTHWEST_ID, WEST_ID, false),  SOUTHWEST_ID}
 };
 
-// NORTHEAST 0
-// NORTHWEST 1
-// SOUTHEAST 2
-// SOUTHWEST 3
+// NORTHEAST_ID 0
+// NORTHWEST_ID 1
+// SOUTHEAST_ID 2
+// SOUTHWEST_ID 3
 // 0:x  1:y
-static constexpr std::array<std::array<int, 2>, 4> adj{{
-{1, -1},
-{-1, -1},
+static constexpr std::array<point, 4> adj{{
+{1, (uint16_t)-1},
+{(uint16_t)-1, (uint16_t)-1},
 {1, 1},
-{-1, 1}}};
+{(uint16_t)-1, 1}}};
 
-// NORTHEAST 0
-// NORTHWEST 1
-// SOUTHEAST 2
-// SOUTHWEST 3
+// NORTHEAST_ID 0
+// NORTHWEST_ID 1
+// SOUTHEAST_ID 2
+// SOUTHWEST_ID 3
 // 0:vert, 1:hori
 static constexpr std::array<std::array<bool, 2>, 4> init_scan_top{{
 {false, true},
@@ -388,34 +390,34 @@ static inline void maskzero(uint64_t &num, uint32_t offset)
 }
 
 //return JPS_ID after mooving from a JPS_ID n moves in direction d
-static inline pad_id shift_in_dir(pad_id id, uint32_t n_moves, direction d, gridmap::bittable m)
+static inline grid_id shift_in_dir(grid_id id, uint32_t n_moves, direction_id d, gridmap::bittable m)
 {
     switch (d)
     {        
     default:
-    case direction::EAST:
-        return pad_id(id.id + n_moves);
+    case direction_id::EAST_ID:
+        return grid_id(id.id + n_moves);
         break;
-    case direction::WEST:
-        return pad_id(id.id - n_moves);
+    case direction_id::WEST_ID:
+        return grid_id(id.id - n_moves);
         break;        
-    case direction::NORTH:
-        return pad_id(id.id - n_moves * m.width());
+    case direction_id::NORTH_ID:
+        return grid_id(id.id - n_moves * m.width());
         break;
-    case direction::SOUTH:
-        return pad_id(id.id + n_moves * m.width());
+    case direction_id::SOUTH_ID:
+        return grid_id(id.id + n_moves * m.width());
         break;
-    case direction::NORTHEAST:
-        return pad_id((id.id - n_moves * m.width()) + n_moves);
+    case direction_id::NORTHEAST_ID:
+        return grid_id((id.id - n_moves * m.width()) + n_moves);
         break;
-    case direction::NORTHWEST:
-        return pad_id((id.id - n_moves * m.width()) - n_moves);            
+    case direction_id::NORTHWEST_ID:
+        return grid_id((id.id - n_moves * m.width()) - n_moves);            
         break;
-    case direction::SOUTHEAST:
-        return pad_id((id.id + n_moves * m.width()) + n_moves);            
+    case direction_id::SOUTHEAST_ID:
+        return grid_id((id.id + n_moves * m.width()) + n_moves);            
         break;
-    case direction::SOUTHWEST:
-        return pad_id((id.id + n_moves * m.width()) - n_moves);            
+    case direction_id::SOUTHWEST_ID:
+        return grid_id((id.id + n_moves * m.width()) - n_moves);            
         break;
     }
 }
@@ -436,24 +438,24 @@ static void printWestScan(uint64_t i)
 
 //rotates a direction by 1/8 in CW or CCW
 template<ScanAttribute::Orientation O>
-direction rotate_eighth(direction in_dir)
+direction_id rotate_eighth(direction_id in_dir)
 {
-    auto d = direction{};
+    auto d = direction_id{};
     if constexpr (O == ScanAttribute::CCW)
     {
         switch (in_dir)
         {
-        case NORTHEAST:
-            d = NORTH;
+        case NORTHEAST_ID:
+            d = NORTH_ID;
             break;
-        case NORTHWEST:
-            d = WEST;
+        case NORTHWEST_ID:
+            d = WEST_ID;
             break;
-        case SOUTHEAST:
-            d = EAST;
+        case SOUTHEAST_ID:
+            d = EAST_ID;
             break;
-        case SOUTHWEST:
-            d = SOUTH;
+        case SOUTHWEST_ID:
+            d = SOUTH_ID;
             break;
         }
     }
@@ -461,17 +463,17 @@ direction rotate_eighth(direction in_dir)
     {
         switch (in_dir)
         {
-        case NORTHEAST:
-            d = EAST;
+        case NORTHEAST_ID:
+            d = EAST_ID;
             break;
-        case NORTHWEST:
-            d = NORTH;
+        case NORTHWEST_ID:
+            d = NORTH_ID;
             break;
-        case SOUTHEAST:
-            d = SOUTH;
+        case SOUTHEAST_ID:
+            d = SOUTH_ID;
             break;
-        case SOUTHWEST:
-            d = WEST;
+        case SOUTHWEST_ID:
+            d = WEST_ID;
             break;
         }
     }
@@ -479,7 +481,7 @@ direction rotate_eighth(direction in_dir)
 }
 
 //if d1 and d2 are in d set of: {E, W} OR {N, S}
-static inline bool EW_or_NS(direction d1, direction d2)
+static inline bool EW_or_NS(direction_id d1, direction_id d2)
 {
     auto c = uint8_t{0};
     c |= d1; c |= d2;
@@ -487,7 +489,7 @@ static inline bool EW_or_NS(direction d1, direction d2)
 }
 
 //if d1 and d2 are in different d set of: {E, N}, {W, S}
-static inline bool EN_diff_WS(direction d1, direction d2)
+static inline bool EN_diff_WS(direction_id d1, direction_id d2)
 {
     uint8_t a = std::countr_zero(static_cast<uint8_t>(d1));
     uint8_t b = std::countr_zero(static_cast<uint8_t>(d2));

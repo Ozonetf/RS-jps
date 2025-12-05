@@ -9,59 +9,61 @@ using namespace ScanAttribute;
 class Ray
 {
 private:
-    jump::jump_point_online<>* m_jps;
-    std::shared_ptr<Tracer> m_tracer;    
-    gridmap::bittable m_map;
-	gridmap::bittable m_rmap;    
+    jump::jump_point_online* m_jps;
+    std::shared_ptr<Tracer> m_tracer;
+    gridmap_rotate_table_convs m_map; 
 
     template<bool East, Domain D>
-    uint32_t shoot_hori_ray(pad_id start, domain::gridmap::bittable map);
+    uint32_t shoot_hori_ray(grid_id start, gridmap::bittable map);
 
 public:
-    Ray(std::shared_ptr<Tracer> tracer, jump::jump_point_online<>* _jps)
-        : m_tracer(tracer), m_jps(_jps), m_map(m_jps->get_map()), m_rmap(m_jps->get_rmap()) {};
+    Ray(std::shared_ptr<Tracer> tracer, jump::jump_point_online* _jps, gridmap_rotate_table_convs _map)
+        : m_tracer(tracer), m_jps(_jps), m_map(_map) {};
     ~Ray() = default;
 
     template <Domain D>
-    std::pair<uint32_t, pad_id> shoot_hori_ray(pad_id start, direction dir);
+    std::pair<uint32_t, grid_id> shoot_hori_ray(grid_id start, direction_id dir);
 
     template <Domain D>
-    inline uint32_t shoot_ray_north(pad_id start){return shoot_hori_ray<true, D>(pad_id{m_jps->id_to_rid(jps_id{start}).id}, m_rmap);};
+    inline uint32_t shoot_ray_north(grid_id start){return shoot_hori_ray<true, D>(grid_id(m_map.id_to_rid(start)), m_map.rtable());};
     template <Domain D>
-    inline uint32_t shoot_ray_south(pad_id start){return shoot_hori_ray<false, D>(pad_id{m_jps->id_to_rid(jps_id{start}).id}, m_rmap);};
+    inline uint32_t shoot_ray_south(grid_id start){return shoot_hori_ray<false, D>(grid_id(m_map.id_to_rid(start)), m_map.rtable());};
     template <Domain D>
-    inline uint32_t shoot_ray_east(pad_id start){return shoot_hori_ray<true, D>(start, m_map);};
+    inline uint32_t shoot_ray_east(grid_id start){return shoot_hori_ray<true, D>(start, m_map.table());};
     template <Domain D>
-    inline uint32_t shoot_ray_west(pad_id start){return shoot_hori_ray<false, D>(start, m_map);};
+    inline uint32_t shoot_ray_west(grid_id start){return shoot_hori_ray<false, D>(start, m_map.table());};
 
-    //shoot a diag-first grid ray towards the target, returns the target pad_id if visible, otherwise the first intersection
+    jump::jump_distance jump_cardinal(direction_id, grid_id id);
+    
+
+    //shoot a diag-first grid ray towards the target, returns the target grid_id if visible, otherwise the first intersection
     template<SolverTraits ST, Octants octant>
-    std::pair<bool, pad_id> check_target_visible(pad_id start, pad_id target, direction dir);
+    std::pair<bool, grid_id> check_target_visible(grid_id start, grid_id target, direction_id dir);
 
     template<SolverTraits ST>
-    pad_id shoot_diag_ray_id(pad_id start, direction dir);
+    grid_id shoot_diag_ray_id(grid_id start, direction_id dir);
     template<SolverTraits ST>
-    pad_id shoot_diag_ray_id(pad_id start, pad_id target, direction dir);
+    grid_id shoot_diag_ray_id(grid_id start, grid_id target, direction_id dir);
 
 
 
     //shoots jps ray in direction d, appends all jump points to vec ref, returns dead end point
     template<SolverTraits ST>
-    pad_id shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_state> &succ);
+    grid_id shoot_rjps_ray(grid_id start, direction_id d, std::vector<rjps_state> &succ);
 
     //shoots a jps ray in direction d, terminates and returns target if its reached
     //otherwised funcitons identical to shoot_rjps_ray 
     template<SolverTraits ST>
-    pad_id shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_state> &succ);
+    grid_id shoot_rjps_ray_to_target(grid_id start, grid_id target, direction_id d, std::vector<rjps_state> &succ);
 };
 
 //simple ray that steps continuouisly until an obstacle is hit
 
 template<bool East, Domain D>
-uint32_t Ray::shoot_hori_ray(pad_id start, domain::gridmap::bittable map)
+uint32_t Ray::shoot_hori_ray(grid_id start, gridmap::bittable map)
 {
     uint32_t steps = 0;
-    auto slider = domain::gridmap_slider::from_bittable(map, start);
+    auto slider = gridmap_slider::from_bittable(map, start);
     if constexpr(!East) 
     {
         slider.adj_bytes(-7);
@@ -110,31 +112,31 @@ uint32_t Ray::shoot_hori_ray(pad_id start, domain::gridmap::bittable map)
 }
 
 template <Domain D>
-std::pair<uint32_t, pad_id> Ray::shoot_hori_ray(pad_id start, direction dir)
+std::pair<uint32_t, grid_id> Ray::shoot_hori_ray(grid_id start, direction_id dir)
 {
-    auto ret = std::pair<uint32_t, pad_id>{};
+    auto ret = std::pair<uint32_t, grid_id>{};
     switch (dir)
     {
-    case NORTH:
+    case NORTH_ID:
         ret.first = this->shoot_ray_north<D>(start);
-        ret.second = shift_in_dir(start, ret.first, NORTH, m_map);
+        ret.second = shift_in_dir(start, ret.first, NORTH_ID, m_map.table());
         break;
-    case SOUTH:
+    case SOUTH_ID:
         ret.first = this->shoot_ray_south<D>(start);
-        ret.second = shift_in_dir(start, ret.first, SOUTH, m_map);
+        ret.second = shift_in_dir(start, ret.first, SOUTH_ID, m_map.table());
         break;
-    case EAST:
+    case EAST_ID:
         ret.first = this->shoot_ray_east<D>(start);
-        ret.second = shift_in_dir(start, ret.first, EAST, m_map);
+        ret.second = shift_in_dir(start, ret.first, EAST_ID, m_map.table());
         break;
-    case WEST:
+    case WEST_ID:
         ret.first = this->shoot_ray_west<D>(start);
-        ret.second = shift_in_dir(start, ret.first, WEST, m_map);
+        ret.second = shift_in_dir(start, ret.first, WEST_ID, m_map.table());
         break;
     default:
         break;
     }
-    if(ret.first == UINT32_MAX) ret.second = pad_id::max();
+    if(ret.first == UINT32_MAX) ret.second = grid_id::max();
     return ret;
 }
 
@@ -142,7 +144,7 @@ std::pair<uint32_t, pad_id> Ray::shoot_hori_ray(pad_id start, direction dir)
 else returns the first colliiosn point*/
 //@return pair.first -> if ray ends on diaganal ray. pair.second -> intersection
 template<SolverTraits ST, Octants octant>
-std::pair<bool, pad_id> Ray::check_target_visible(pad_id start, pad_id target, direction dir)
+std::pair<bool, grid_id> Ray::check_target_visible(grid_id start, grid_id target, direction_id dir)
 {
     using ScanAttribute::Octants;
     auto tp = shoot_diag_ray_id<ST>(start, target, dir);
@@ -150,150 +152,178 @@ std::pair<bool, pad_id> Ray::check_target_visible(pad_id start, pad_id target, d
     {
         return std::make_pair(false, target);
     }
-    auto tp_coord = m_map.id_to_xy(tp), target_coord = m_map.id_to_xy(target);
-    uint32_t curx = tp_coord.first;
-    uint32_t cury = tp_coord.second;
-    uint32_t tx = target_coord.first;
-    uint32_t ty = target_coord.second;
+    auto tp_coord = m_map.id_to_point(tp), target_coord = m_map.id_to_point(target);
+    uint32_t curx = tp_coord.x;
+    uint32_t cury = tp_coord.y;
+    uint32_t tx = target_coord.x;
+    uint32_t ty = target_coord.y;
     if(curx != tx && cury != ty) return std::make_pair(false, tp);
     uint32_t steps = 0;
-    auto ret = pad_id{};
+    auto ret = grid_id{};
     if constexpr(octant == NNW || octant == NNE)
     {
         steps = shoot_ray_north<Travasable>(tp);
         if(cury - steps <= ty) ret = target;
-        else ret = shift_in_dir(tp, steps, NORTH, m_map);
+        else ret = shift_in_dir(tp, steps, NORTH_ID, m_map.table());
     }
     else if constexpr(octant == ENE || octant == ESE)
     {
         steps = shoot_ray_east<Travasable>(tp);
         if(curx + steps >= tx) ret = target;
-        else ret = shift_in_dir(tp, steps, EAST, m_map);
+        else ret = shift_in_dir(tp, steps, EAST_ID, m_map.table());
     }
     else if constexpr(octant == SSE || octant == SSW)
     {
         steps = shoot_ray_south<Travasable>(tp);
         if(cury + steps >= ty) ret = target;
-        else ret = shift_in_dir(tp, steps, SOUTH, m_map);
+        else ret = shift_in_dir(tp, steps, SOUTH_ID, m_map.table());
     }
     else if constexpr(octant == WSW || octant == WNW)
     {
         steps = shoot_ray_west<Travasable>(tp);
         if(curx - steps <= tx) ret = target;
-        else ret = shift_in_dir(tp, steps, WEST, m_map);
+        else ret = shift_in_dir(tp, steps, WEST_ID, m_map.table());
     }
-    if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(tp_coord, m_map.id_to_xy(ret), "blue", "shoot to target");
+    if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(tp_coord, m_map.id_to_point(ret), "blue", "shoot to target");
     return std::make_pair(true, ret);;
 }
 
 template<SolverTraits ST>
-pad_id Ray::shoot_diag_ray_id(pad_id start, direction dir)
+grid_id Ray::shoot_diag_ray_id(grid_id start, direction_id dir)
 {
-    assert( dir == NORTHEAST || dir == NORTHWEST || dir == SOUTHEAST || dir == SOUTHWEST &&
+    assert( dir == NORTHEAST_ID || dir == NORTHWEST_ID || dir == SOUTHEAST_ID || dir == SOUTHWEST_ID &&
 	    "Must be intercardinal direction");
-    auto dir_ind =std::countr_zero<uint8_t>(dir) - 4;
-    int adjx = adj[dir_ind][0], adjy = adj[dir_ind][1];
-    uint32_t curx, cury;
-    auto c = m_map.id_to_xy(start);
-    curx = c.first; cury = c.second;
+    uint16_t adjx = adj[dir].x, adjy = adj[dir].y;
+    auto cur = m_map.id_to_point(start);
+    auto cstart[[maybe_unused]] = cur;
     bool next = true;
     while(true)
     {
         //check 3 neibouring cells in direction to avoiding "corner cutting"
-        next &= m_map.get(m_map.xy_to_id(curx+adjx, cury+adjy));
-        next &= m_map.get(m_map.xy_to_id(curx, cury+adjy));
-        next &= m_map.get(m_map.xy_to_id(curx+adjx, cury));
+        next &= m_map.map().get(m_map.point_to_id(point(cur.x+adjx, cur.y+adjy)));
+        next &= m_map.map().get(m_map.point_to_id(point(cur.x, cur.y+adjy)));
+        next &= m_map.map().get(m_map.point_to_id(point(cur.x+adjx, cur.y)));
         //stops if next cell is blocked
         if(next == 0)
         {
-            if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(c, std::make_pair(curx, cury), "aqua", "diag ray?");
-            return m_map.xy_to_id(curx, cury);
+            if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray({cstart.x, cstart.y}, {cur.x, cur.y}, "aqua", "diag ray?");
+            return m_map.point_to_id(cur);
         }
         else 
         {
-            curx+=adjx; cury+=adjy;
+            cur.x+=adjx; cur.y+=adjy;
         }
     }
 }
 
+// TODO: look into using BasicIntercardinalWalker or IntercardinalWalker<D>s
 //shoots diaganal ray in direction dir, stops either on obstacle hit or reached a cell thats parallel to the target (same x or y)
 template<SolverTraits ST>
-pad_id Ray::shoot_diag_ray_id(pad_id start, pad_id target, direction dir)
+grid_id Ray::shoot_diag_ray_id(grid_id start, grid_id target, direction_id dir)
 {
-    assert( dir == NORTHEAST || dir == NORTHWEST || dir == SOUTHEAST || dir == SOUTHWEST &&
+    assert( dir == NORTHEAST_ID || dir == NORTHWEST_ID || dir == SOUTHEAST_ID || dir == SOUTHWEST_ID &&
 	    "Must be intercardinal direction");
-    auto dir_ind =std::countr_zero<uint8_t>(dir) - 4;
-    int adjx = adj[dir_ind][0], adjy = adj[dir_ind][1];
-    auto tcoord = m_map.id_to_xy(target);
-    uint32_t curx, cury, tx = tcoord.first, ty = tcoord.second;
-    auto c = m_map.id_to_xy(start);
-    curx = c.first; cury = c.second;
+    uint16_t adjx = adj[dir].x, adjy = adj[dir].y;
+    auto cur = m_map.id_to_point(start);
+    auto cstart[[maybe_unused]] = cur;
+    auto tcoord = m_map.id_to_point(target);
     bool next = true;
     while(true)
     {
         //check 3 neibouring cells in direction to avoiding "corner cutting"
-        next &= m_map.get(m_map.xy_to_id(curx+adjx, cury+adjy));
-        next &= m_map.get(m_map.xy_to_id(curx, cury+adjy));
-        next &= m_map.get(m_map.xy_to_id(curx+adjx, cury));
+        next &= m_map.map().get(m_map.point_to_id(point(cur.x+adjx, cur.y+adjy)));
+        next &= m_map.map().get(m_map.point_to_id(point(cur.x, cur.y+adjy)));
+        next &= m_map.map().get(m_map.point_to_id(point(cur.x+adjx, cur.y)));
         //stops if next cell is blocked or parallel to target
-        if(next == 0 || curx == tx || cury == ty)
+        if(next == 0 || cur.x == tcoord.x || cur.y == tcoord.y)
         {
-            if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(c, std::make_pair(curx, cury), "aqua", "diag ray");
-            return m_map.xy_to_id(curx, cury);
+            if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray({cstart.x, cstart.y}, {cur.x, cur.y}, "aqua", "diag ray");
+            return m_map.point_to_id(cur);
         }
         else 
         {
-            curx+=adjx; cury+=adjy;
+            cur.x+=adjx; cur.y+=adjy;
         }
     }
 }
 
-template<SolverTraits ST>
-pad_id Ray::shoot_rjps_ray(pad_id start, direction d, std::vector<rjps_state> &succ)
+jump::jump_distance Ray::jump_cardinal(direction_id d, grid_id id)
 {
-    auto ret = m_jps->jump_cardinal(d, jps_id{start.id}, m_jps->id_to_rid(jps_id{start.id}));
-    if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(m_map.id_to_xy(start), m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
-    while (ret.first > 0)
+    jump::jump_distance ret{};
+    grid_pair_id pid{id, m_map.id_to_rid(id)};
+    switch (d) {
+    case NORTH_ID:
+        ret = m_jps->jump_cardinal_next<NORTH_ID>(pid);
+        break;
+    case EAST_ID:
+        ret = m_jps->jump_cardinal_next<EAST_ID>(pid);
+        break;
+    case SOUTH_ID:
+        ret = m_jps->jump_cardinal_next<SOUTH_ID>(pid);
+        break;
+    case WEST_ID:
+        ret = m_jps->jump_cardinal_next<WEST_ID>(pid);
+        break;
+    }
+    return ret;
+}
+
+// TODO: look at converting over from grid_id to domain::grid_pair_id
+// TODO: look at making direction_id a template parameter for this function
+template<SolverTraits ST>
+grid_id Ray::shoot_rjps_ray(grid_id start, direction_id d, std::vector<rjps_state> &succ)
+{
+    const uint32_t idadj = dir_id_adj(d, m_map.width());
+    auto dist = jump_cardinal(d, start);
+    grid_id ret = start;
+    ret.id += idadj * static_cast<uint32_t>(dist);
+    if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(m_map.id_to_point(start), m_map.id_to_point(ret), "green", "jps ray");
+    while (dist > 0)
     {
         //at this point, d is the direction of jps when pushed onto the vector, the scan quadrant will be updated at the end of scanning the parent's quadrant
-        // succ.emplace_back(ret.second, nullptr, m_map.id_to_xy(ret.second), d);
-        auto n = rjps_state{ret.second};
+        // succ.emplace_back(ret.second, nullptr, m_map.id_to_point(ret.second), d);
+        auto n = rjps_state{ret};
         //cache the jps direction the succ is found, used for generating the succ search node
-        succ.emplace_back(ret.second, d);
-        ret = m_jps->jump_cardinal(d, ret.second, m_jps->id_to_rid(ret.second));
+        succ.emplace_back(ret, d);
+        dist = jump_cardinal(d, ret);
+        ret.id += idadj * static_cast<uint32_t>(dist);
         if constexpr(ST == SolverTraits::OutputToPosthoc) 
         {
-            auto r = m_map.id_to_xy(pad_id{ret.second});
-            m_tracer->trace_ray(r, m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
+            auto r = m_map.id_to_point(ret);
+            m_tracer->trace_ray(r, m_map.id_to_point(ret), "green", "jps ray");
         }
     }
-    return pad_id{ret.second.id};
+    return ret;
 }
 
 template<SolverTraits ST>
-pad_id Ray::shoot_rjps_ray_to_target(pad_id start, pad_id target, direction d, std::vector<rjps_state> &succ)
+grid_id Ray::shoot_rjps_ray_to_target(grid_id start, grid_id target, direction_id d, std::vector<rjps_state> &succ)
 {
-    auto ret = m_jps->jump_cardinal(d, jps_id{start.id}, m_jps->id_to_rid(jps_id{start.id}));
-    if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(m_map.id_to_xy(start), m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
-    while (ret.first > 0)
+    const uint32_t idadj = dir_id_adj(d, m_map.width());
+    auto dist = jump_cardinal(d, start);
+    grid_id ret = start;
+    ret.id += idadj * static_cast<uint32_t>(dist);
+    if constexpr(ST == SolverTraits::OutputToPosthoc) m_tracer->trace_ray(m_map.id_to_point(start), m_map.id_to_point(ret), "green", "jps ray");
+    while (dist > 0)
     {
         //at this point, d is the direction of jps when pushed onto the vector, the scan quadrant will be updated at the end of scanning the parent's quadrant
-        // succ.emplace_back(ret.second, nullptr, m_map.id_to_xy(ret.second), d);
-        auto n = rjps_state{ret.second};
-        succ.emplace_back(ret.second, d);
-        if(ret.second == target)
+        // succ.emplace_back(ret.second, nullptr, m_map.id_to_point(ret.second), d);
+        auto n = rjps_state{ret};
+        succ.emplace_back(ret, d);
+        if(ret == target)
         {
             return target;
         }
         else
         {
-            ret = m_jps->jump_cardinal(d, ret.second, m_jps->id_to_rid(ret.second));
+            dist = jump_cardinal(d, ret);
+            ret.id += idadj * static_cast<uint32_t>(dist);
             if constexpr(ST == SolverTraits::OutputToPosthoc) 
             {
-                auto r = m_map.id_to_xy(pad_id{ret.second});
-                m_tracer->trace_ray(r, m_map.id_to_xy(pad_id{ret.second}), "green", "jps ray");
+                auto r = m_map.id_to_point(ret);
+                m_tracer->trace_ray(r, m_map.id_to_point(ret), "green", "jps ray");
             }
         }
     }
-    return pad_id{ret.second.id};
+    return ret;
 }

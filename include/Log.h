@@ -9,8 +9,6 @@
 // #include <memory>
 // #include <warthog/domain/gridmap.h>
 
-using namespace std;
-
 class Tracer
 {
 private:
@@ -26,18 +24,18 @@ public:
 
     void set_dim(warthog::memory::bittable_dimension _dim){m_dim = _dim;};
 
-    void init(pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finish);
+    void init(point start, point finish);
     void close();
     
     void expand(uint32_t x, uint32_t y, string color, string type);
-    void expand(std::pair<uint32_t, uint32_t> p, string color, string type);
+    void expand(point p, string color, string type);
     //draws a cell that clears after 1 step
-    void draw_cell(std::pair<uint32_t, uint32_t> p, string color, string type);
-    void close_node(std::pair<uint32_t, uint32_t> p);
+    void draw_cell(point p, string color, string type);
+    void close_node(point p);
 
     //draws a 2d ray from start to finish, clears after 1 step
-    void trace_ray(pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finish, string color, string type);
+    void trace_ray(point start, point finish, string color, string type);
     //draws a 2d ray from start to finish, clears on a close trace with the matching closeid
-    void trace_ray_till_close(std::pair<uint32_t, uint32_t> closeid, pair<uint32_t, uint32_t> start, pair<uint32_t, uint32_t> finish, string color, string type);
-    void draw_bounds(std::pair<uint32_t, uint32_t> p, direction dir);
+    void trace_ray_till_close(point closeid, point start, point finish, string color, string type);
+    void draw_bounds(point p, direction_id dir);
 };

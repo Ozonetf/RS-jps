@@ -64,8 +64,9 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
 {
     auto mapfile = string{"../maps/" + mapname};
     warthog::domain::gridmap map(mapfile.c_str());
-    jps::jump::jump_point_online jps(&map);
-    auto s = Solver<SolverTraits::Default>(&jps);
+    jps::domain::rotate_gridmap rmap(map);
+    jps::jump::jump_point_online jps(rmap);
+    auto s = Solver<SolverTraits::Default>(&jps, rmap);
     std::cout << "experiment\t\toptimal plenth\t\trjps plenth\t\texpanded\t\tgenerated\t\treopend\t\tupdated\t\theap_pops\t\tnanos\t\texpansion time\n";
     // Solver<2> s(&jps);
     for (size_t i = 0; i < scen_mngr.num_experiments(); i++)
@@ -73,7 +74,7 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
         const auto& cur_exp = scen_mngr.get_experiment(i);
         pad_id start = map.to_padded_id_from_unpadded(uint32_t(cur_exp->startx()), uint32_t(cur_exp->starty()));
         pad_id target = map.to_padded_id_from_unpadded(uint32_t(cur_exp->goalx()), uint32_t(cur_exp->goaly()));
-        s.get_path(start, target);
+        s.get_path(grid_id(start), grid_id(target));
         auto res = s.get_result();
         if (std::fabs(res.plenth - cur_exp->distance()) > EPSILON) assert(false &&"failed ");
         if constexpr(Test)
@@ -101,12 +102,13 @@ void run_single_test(warthog::util::scenario_manager &scen_mngr, string mapname,
 {
     auto mapfile = string{"../maps/" + mapname};
     warthog::domain::gridmap map(mapfile.c_str());
-    jps::jump::jump_point_online jps(&map);
-    auto s = Solver<SolverTraits::OutputToPosthoc>(&jps);
+    jps::domain::rotate_gridmap rmap(map);
+    jps::jump::jump_point_online jps(rmap);
+    auto s = Solver<SolverTraits::OutputToPosthoc>(&jps, rmap);
     const auto& cur_exp = scen_mngr.get_experiment(i);
     pad_id start = map.to_padded_id_from_unpadded(uint32_t(cur_exp->startx()), uint32_t(cur_exp->starty()));
     pad_id target = map.to_padded_id_from_unpadded(uint32_t(cur_exp->goalx()), uint32_t(cur_exp->goaly()));
-    s.get_path(start, target);
+    s.get_path(grid_id(start), grid_id(target));
     auto res = s.get_result();
     std::cout<< "experiment " << i <<":\t";
     if (std::fabs(res.plenth - cur_exp->distance()) <= EPSILON) std::cout << "\033[1;32m";  //green 

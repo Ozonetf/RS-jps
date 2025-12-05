@@ -15,22 +15,22 @@
 
 struct scan_dir
 {
-    direction cw_init   {}; //the direction of initial scan in CW orientation
-    direction cw_subseq {}; //subsequent scan directions in CW orientation
-    direction cw_jps    {}; //direction of scan after all jps scans in CW orientation
-    direction ccw_init  {}; //the direction of initial scan in CCW orientation
-    direction ccw_subseq{}; //subsequent scan directions in CCW orientation
-    direction ccw_jps   {}; //direction of scan after all jps scans in CCW orientation
+    direction_id cw_init   {}; //the direction of initial scan in CW orientation
+    direction_id cw_subseq {}; //subsequent scan directions in CW orientation
+    direction_id cw_jps    {}; //direction of scan after all jps scans in CW orientation
+    direction_id ccw_init  {}; //the direction of initial scan in CCW orientation
+    direction_id ccw_subseq{}; //subsequent scan directions in CCW orientation
+    direction_id ccw_jps   {}; //direction of scan after all jps scans in CCW orientation
 };
 
 struct DirectionInfo
 {
-    direction init      {};
-    direction subseq    {};
-    direction jps       {};
-    direction terminate {};
+    direction_id init      {};
+    direction_id subseq    {};
+    direction_id jps       {};
+    direction_id terminate {};
 
-    DirectionInfo(direction _i, direction _s, direction _j,direction _t): init(_i), subseq(_s), jps(_j), terminate(_t){};
+    DirectionInfo(direction_id _i, direction_id _s, direction_id _j,direction_id _t): init(_i), subseq(_s), jps(_j), terminate(_t){};
     DirectionInfo(){};
 };
 
@@ -50,30 +50,29 @@ template<SolverTraits ST>
 class Solver
 {
 public:
-    Solver(jump::jump_point_online<>* _jps) : 
-    m_jps(_jps), m_tracer(new Tracer), m_map(m_jps->get_map()), m_rmap(m_jps->get_rmap()), 
-    m_ray(m_tracer, m_jps), m_scanner(m_tracer, m_jps), m_octile_h(m_map.width(), m_map.height()),
+    Solver(jump::jump_point_online* _jps, gridmap_rotate_table_convs _map) : 
+    m_jps(_jps), m_map(_map), m_tracer(new Tracer),
+    m_ray(m_tracer, m_jps, m_map), m_scanner(m_tracer, m_jps, m_map), m_octile_h(m_map.width(), m_map.height()),
     m_timer()
     {
         static_assert(ST == SolverTraits::Default || ST == SolverTraits::OutputToPosthoc);
-        m_tracer->set_dim(m_map.dim());
+        m_tracer->set_dim(m_map.table().dim());
         m_all_node_list.reserve(2048);
     }
     ~Solver() = default;
-    void get_path(pad_id start, pad_id target);
+    void get_path(grid_id start, grid_id target);
     inline experiment_result get_result(){return m_stats;};
 
 private:
 
-    jump::jump_point_online<>*          m_jps;
+    jump::jump_point_online*            m_jps;
+    gridmap_rotate_table_convs          m_map;
     std::shared_ptr<Tracer>             m_tracer;
-    warthog::domain::gridmap::bittable  m_map;
-    warthog::domain::gridmap::bittable  m_rmap;
     heuristic::octile_heuristic         m_octile_h;
     Ray                                 m_ray;
     Scanner                             m_scanner;
-    pad_id                              m_target;
-    std::pair<uint32_t, uint32_t>       m_tcoord;
+    grid_id                             m_target;
+    point                               m_tcoord;
     experiment_result                   m_stats;
     warthog::util::timer                m_timer;
     std::vector<rjps_state>             m_succ;
@@ -81,18 +80,18 @@ private:
     boost::heap::pairing_heap<search_node> m_pq;
 
     void expand_node(search_node n);
-    template <direction D>
+    template <direction_id D>
     void expand(search_node cur);
     void generate(search_node* parent);
     void insert(rjps_state succ, search_node *pred);
     void insert_start_state(const rjps_state& succ);
-    bool target_in_scan_quad(pad_id start, direction quad);
+    bool target_in_scan_quad(grid_id start, direction_id quad);
     template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-    uint32_t scan_in_bound(pad_id start, search_node parent, uint32_t boundary, direction start_d);
+    uint32_t scan_in_bound(grid_id start, search_node parent, uint32_t boundary, direction_id start_d);
     //initilizes a scan_dir struct based on a cell on a grid and an rjps scan direction
     //returns true if starts on a convex point
-    bool init_scan_dir(pad_id start, direction p_dir, scan_dir &dir);
-    pad_id grid_ray_incident(pad_id from, pad_id to, direction d);
+    bool init_scan_dir(grid_id start, direction_id p_dir, scan_dir &dir);
+    grid_id grid_ray_incident(grid_id from, grid_id to, direction_id d);
     double interval_h(const rjps_state& v);
 };
 
@@ -101,17 +100,17 @@ inline void Solver<ST>::expand_node(search_node n)
 {
     switch (n.state.dir)
     {
-    case NORTHWEST:
-        expand<NORTHWEST>(n);
+    case NORTHWEST_ID:
+        expand<NORTHWEST_ID>(n);
         break;
-    case NORTHEAST:
-        expand<NORTHEAST>(n);        
+    case NORTHEAST_ID:
+        expand<NORTHEAST_ID>(n);        
         break;
-    case SOUTHWEST:
-        expand<SOUTHWEST>(n);        
+    case SOUTHWEST_ID:
+        expand<SOUTHWEST_ID>(n);        
         break;
-    case SOUTHEAST:
-        expand<SOUTHEAST>(n);        
+    case SOUTHEAST_ID:
+        expand<SOUTHEAST_ID>(n);        
         break;
     default:
         assert(false && "invalide node expansion");
@@ -120,14 +119,14 @@ inline void Solver<ST>::expand_node(search_node n)
 }
 
 template <SolverTraits ST>
-template <direction D>
+template <direction_id D>
 void Solver<ST>::expand(search_node cur)
 {
     using namespace ScanAttribute;
     static_assert(
-	    D == NORTHEAST || D == NORTHWEST || D == SOUTHEAST || D == SOUTHWEST,
+	    D == NORTHEAST_ID || D == NORTHWEST_ID || D == SOUTHEAST_ID || D == SOUTHWEST_ID,
 	    "D must be inter-cardinal.");
-    auto cur_coord = m_map.id_to_xy(cur.state.id);
+    auto cur_coord = m_map.id_to_point(cur.state.id);
     if constexpr(ST == SolverTraits::OutputToPosthoc)
     {
         m_tracer->expand(cur_coord, "orange", 
@@ -139,7 +138,7 @@ void Solver<ST>::expand(search_node cur)
     m_succ.clear();
     m_stats.expanded++;
     //coord postion of ray intersec from shooting to target, potentially unused
-    auto temp = pad_id{}, target_scan_start = temp;
+    auto temp = grid_id{}, target_scan_start = temp;
     auto s_dir = scan_dir{};
     bool target_blocked = false;
     //left octant and right octant
@@ -147,7 +146,7 @@ void Solver<ST>::expand(search_node cur)
     //if target is in same quadrant, shoot to it
     if(target_in_scan_quad(cur.state.id, cur.state.dir))
     {
-        std::pair<bool, pad_id> vis_res;
+        std::pair<bool, grid_id> vis_res;
         if(on_left_octant<D>(cur_coord, m_tcoord))
         {
             vis_res = m_ray.check_target_visible<ST, loct>(cur.state.id, m_target, cur.state.dir);
@@ -172,18 +171,18 @@ void Solver<ST>::expand(search_node cur)
         }
     }
     temp = m_ray.shoot_diag_ray_id<ST>(cur.state.id, cur.state.dir);
-    auto diag_bounds = m_map.id_to_xy(temp);
+    auto diag_bounds = m_map.id_to_point(temp);
     auto on_convex = init_scan_dir(temp, cur.state.dir, s_dir);
     auto cw_start = temp, ccw_start = temp;
     if(on_convex)
     {
-        cw_start = shift_in_dir(cw_start, 1, s_dir.cw_init, m_map);
-        ccw_start = shift_in_dir(ccw_start, 1, s_dir.ccw_init, m_map);
+        cw_start = shift_in_dir(cw_start, 1, s_dir.cw_init, m_map.table());
+        ccw_start = shift_in_dir(ccw_start, 1, s_dir.ccw_init, m_map.table());
     }
     auto dir_info = DirectionInfo{};
-    uint32_t cwbound = 0, ccwbound = 0;
-    cwbound = horizontally_bound(roct) ? cur_coord.first: cur_coord.second;
-    ccwbound = horizontally_bound(loct) ? cur_coord.first: cur_coord.second;
+    uint16_t cwbound = 0, ccwbound = 0;
+    cwbound = horizontally_bound(roct) ? cur_coord.x: cur_coord.y;
+    ccwbound = horizontally_bound(loct) ? cur_coord.x: cur_coord.y;
     //scan both ways from the point the ray intercepted
     //CW scan
     dir_info.init = s_dir.cw_init;
@@ -207,16 +206,16 @@ void Solver<ST>::expand(search_node cur)
         if(on_left_octant<D>(cur_coord, m_tcoord))
         {
             //left octant always uses diag bounds as scanning bound for CW, and horizontal bounds for CCW
-            if constexpr (horizontally_bound(loct)) {cw_bound = diag_bounds.first, ccw_bound = cur_coord.first;}
-            else                                    {cw_bound = diag_bounds.second, ccw_bound = cur_coord.second;}
+            if constexpr (horizontally_bound(loct)) {cw_bound = diag_bounds.x, ccw_bound = cur_coord.x;}
+            else                                    {cw_bound = diag_bounds.y, ccw_bound = cur_coord.y;}
             
             scan_in_bound<CW, loct> (target_scan_start, cur, cw_bound, get_subseq_dir<CW, loct>());
             scan_in_bound<CCW, loct>(target_scan_start, cur, ccw_bound, get_subseq_dir<CCW, loct>());
         }
         else    
         {
-            if constexpr (horizontally_bound(roct)) {cw_bound = cur_coord.first, ccw_bound = diag_bounds.first;}
-            else                                    {cw_bound = cur_coord.second, ccw_bound = diag_bounds.second;}
+            if constexpr (horizontally_bound(roct)) {cw_bound = cur_coord.x, ccw_bound = diag_bounds.x;}
+            else                                    {cw_bound = cur_coord.y, ccw_bound = diag_bounds.y;}
             scan_in_bound<CW, roct> (target_scan_start, cur, cw_bound, get_subseq_dir<CW, roct>());
             scan_in_bound<CCW, roct>(target_scan_start, cur, ccw_bound, get_subseq_dir<CCW, roct>());
         }
@@ -234,14 +233,14 @@ void Solver<ST>::expand(search_node cur)
 }
 
 template <SolverTraits ST>
-void Solver<ST>::get_path(pad_id start, pad_id target)
+void Solver<ST>::get_path(grid_id start, grid_id target)
 {
     m_stats = experiment_result{};
     m_pq.clear();
     m_all_node_list.clear();
     m_target = target;
-    m_tcoord = m_map.id_to_xy(target);
-    auto start_coord = m_map.id_to_xy(start);
+    m_tcoord = m_map.id_to_point(target);
+    auto start_coord = m_map.id_to_point(start);
     if constexpr(ST == SolverTraits::OutputToPosthoc)
     {
         m_tracer->init(start_coord, m_tcoord);
@@ -251,13 +250,13 @@ void Solver<ST>::get_path(pad_id start, pad_id target)
     m_timer.start();
     auto start_state = rjps_state{};
     start_state.id  = start;
-    start_state.dir = NORTHEAST;  
+    start_state.dir = NORTHEAST_ID;  
     insert_start_state(start_state);
-    start_state.dir = NORTHWEST;
+    start_state.dir = NORTHWEST_ID;
     insert_start_state(start_state);
-    start_state.dir = SOUTHEAST;
+    start_state.dir = SOUTHEAST_ID;
     insert_start_state(start_state);
-    start_state.dir = SOUTHWEST;
+    start_state.dir = SOUTHWEST_ID;
     insert_start_state(start_state);
     while(!m_pq.empty())
     {
@@ -272,7 +271,7 @@ void Solver<ST>::get_path(pad_id start, pad_id target)
         }
         m_pq.pop();
         // std::cout << (cur.gval + cur.hval)<< " id: " << to_string((uint64_t)cur.state.id) << " size: " +to_string(m_pq.size())+'\n';
-        auto cur_coord = m_map.id_to_xy(cur.state.id);
+        auto cur_coord = m_map.id_to_point(cur.state.id);
         auto exp_start = m_timer.elapsed_time_nano();
         expand_node(cur);
         auto exp_end = m_timer.elapsed_time_nano();
@@ -310,22 +309,22 @@ void Solver<ST>::get_path(pad_id start, pad_id target)
 }
 
 template <SolverTraits ST>
-inline bool Solver<ST>::target_in_scan_quad(pad_id start, direction quad)
+inline bool Solver<ST>::target_in_scan_quad(grid_id start, direction_id quad)
 {    
-    auto s = m_map.id_to_xy(start);
+    auto s = m_map.id_to_point(start);
     switch (quad)
     {
-    case NORTHEAST:
-        return(m_tcoord.first >= s.first && m_tcoord.second <= s.second);
+    case NORTHEAST_ID:
+        return(m_tcoord.x >= s.x && m_tcoord.y <= s.y);
         break;
-    case NORTHWEST:
-        return(m_tcoord.first <= s.first && m_tcoord.second <= s.second);
+    case NORTHWEST_ID:
+        return(m_tcoord.x <= s.x && m_tcoord.y <= s.y);
         break;
-    case SOUTHEAST:
-        return(m_tcoord.first >= s.first && m_tcoord.second >= s.second);
+    case SOUTHEAST_ID:
+        return(m_tcoord.x >= s.x && m_tcoord.y >= s.y);
         break;
-    case SOUTHWEST:
-        return(m_tcoord.first <= s.first && m_tcoord.second >= s.second);
+    case SOUTHWEST_ID:
+        return(m_tcoord.x <= s.x && m_tcoord.y >= s.y);
         break;
     default:
         assert(false);
@@ -334,77 +333,77 @@ inline bool Solver<ST>::target_in_scan_quad(pad_id start, direction quad)
 }
 
 template <SolverTraits ST>
-bool Solver<ST>::init_scan_dir(pad_id start, direction p_dir, scan_dir &dir)
+bool Solver<ST>::init_scan_dir(grid_id start, direction_id p_dir, scan_dir &dir)
 {
     assert(
-    p_dir == NORTHEAST || p_dir == NORTHWEST || p_dir == SOUTHEAST || p_dir == SOUTHWEST 
+    p_dir == NORTHEAST_ID || p_dir == NORTHWEST_ID || p_dir == SOUTHEAST_ID || p_dir == SOUTHWEST_ID 
     && "Init scan direction: in dir must be intercardinal direction");
-    auto dir_ind =std::countr_zero<uint8_t>(p_dir) - 4;
-    auto adjx = adj[dir_ind][0], adjy = adj[dir_ind][1];
+    // auto adjx = adj[p_dir].x, adjy = adj[p_dir].y;
     bool vert, hori, ret = false;
-    vert = m_map.get(pad_id{start.id + adjy * (int32_t)m_map.width()});
-    hori = m_map.get(pad_id{start.id + adjx});
+    vert = m_map.map().get(grid_id(start.id + dir_id_adj_vert(p_dir, m_map.width())));
+    hori = m_map.map().get(grid_id(start.id + dir_id_adj_hori(p_dir)));
     if(vert) //vert not blocked
     {
         if(hori) //convex point
         {
-            dir.cw_init = d_init_scan_CW[dir_ind][dir_ind == 0 || dir_ind == 3];
-            dir.ccw_init = d_init_scan_CCW[dir_ind][dir_ind == 1 || dir_ind == 2];
+            dir.cw_init = d_init_scan_CW[p_dir][p_dir == NORTH_ID || p_dir == WEST_ID];
+            dir.ccw_init = d_init_scan_CCW[p_dir][p_dir == SOUTH_ID || p_dir == EAST_ID];
             ret = true;
         }
         else//vert
         {
-            dir.cw_init = d_init_scan_CW[dir_ind][0];
-            dir.ccw_init = d_init_scan_CCW[dir_ind][0];
+            dir.cw_init = d_init_scan_CW[p_dir][0];
+            dir.ccw_init = d_init_scan_CCW[p_dir][0];
         }
     }
     else //vert blocked
     {
         if(hori)//hori
         {
-            dir.cw_init = d_init_scan_CW[dir_ind][1];
-            dir.ccw_init = d_init_scan_CCW[dir_ind][1];
+            dir.cw_init = d_init_scan_CW[p_dir][1];
+            dir.ccw_init = d_init_scan_CCW[p_dir][1];
         }
         else//concave point
         {
-            dir.cw_init = d_init_scan_CW[dir_ind][dir_ind == 1 || dir_ind == 2];
-            dir.ccw_init = d_init_scan_CCW[dir_ind][dir_ind == 0 || dir_ind == 3];
+            dir.cw_init = d_init_scan_CW[p_dir][p_dir == SOUTH_ID || p_dir == EAST_ID];
+            dir.ccw_init = d_init_scan_CCW[p_dir][p_dir == NORTH_ID || p_dir == WEST_ID];
         }
     }
-    dir.cw_subseq = d_scan[dir_ind][0];
-    dir.cw_jps = d_jps[dir_ind][0];
-    dir.ccw_subseq = d_scan[dir_ind][1];
-    dir.ccw_jps = d_jps[dir_ind][1];
+    dir.cw_subseq = d_scan[p_dir][0];
+    dir.cw_jps = d_jps[p_dir][0];
+    dir.ccw_subseq = d_scan[p_dir][1];
+    dir.ccw_jps = d_jps[p_dir][1];
     return ret;
 }
 
 template <SolverTraits ST>
-pad_id Solver<ST>::grid_ray_incident(pad_id from, pad_id to, direction d)
+grid_id Solver<ST>::grid_ray_incident(grid_id from, grid_id to, direction_id d)
 {
-    auto f_coord = m_map.id_to_xy(from), t_coord = m_map.id_to_xy(to);
-    auto m = min(abs((int)f_coord.first - (int)t_coord.first), abs((int)f_coord.second - (int)t_coord.second));
-    return shift_in_dir(from, m, d, m_map);
+    auto f_coord = m_map.id_to_point(from), t_coord = m_map.id_to_point(to);
+    auto diff_coord = point_signed_diff(f_coord, t_coord);
+    auto m = std::min(abs(diff_coord.first), abs(diff_coord.second));
+    return shift_in_dir(from, m, d, m_map.table());
 }
 
 template <SolverTraits ST>
 inline void Solver<ST>::generate(search_node* parent)
 {
-    auto top_adj = direction{}, bottom_adj = top_adj;
+    auto top_adj = direction_id{}, bottom_adj = top_adj;
     for(rjps_state& succ : m_succ)
     {        
         switch (succ.dir)
         {
-        case NORTH:
-            top_adj = SOUTHWEST; bottom_adj = SOUTHEAST;
+        case NORTH_ID:
+            top_adj = SOUTHWEST_ID; bottom_adj = SOUTHEAST_ID;
             break;
-        case SOUTH:
-            top_adj = NORTHWEST; bottom_adj = NORTHEAST;
+        case SOUTH_ID:
+            top_adj = NORTHWEST_ID; bottom_adj = NORTHEAST_ID;
             break;
-        case EAST:
-            top_adj = NORTHWEST; bottom_adj = SOUTHWEST;
+        case EAST_ID:
+            top_adj = NORTHWEST_ID; bottom_adj = SOUTHWEST_ID;
             break;
-        case WEST:
-            top_adj = NORTHEAST; bottom_adj = SOUTHEAST;
+        case WEST_ID:
+            top_adj = NORTHEAST_ID; bottom_adj = SOUTHEAST_ID;
             break;
         default:
             if(succ.id == m_target) 
@@ -418,8 +417,8 @@ inline void Solver<ST>::generate(search_node* parent)
             }
             else assert(false && "successor dir is NONE");
         }
-        bool top = !m_map.get(shift_in_dir(succ.id, 1, top_adj, m_map));
-        bool bottom = !m_map.get(shift_in_dir(succ.id, 1, bottom_adj, m_map));
+        bool top = !m_map.map().get(shift_in_dir(succ.id, 1, top_adj, m_map.table()));
+        bool bottom = !m_map.map().get(shift_in_dir(succ.id, 1, bottom_adj, m_map.table()));
         if(top && bottom) [[unlikely]]
         {
             auto aux_succ = succ;
@@ -449,7 +448,7 @@ void Solver<ST>::insert(rjps_state succ, search_node *pred)
         n.hval = interval_h(n.state);
         if constexpr(ST == SolverTraits::OutputToPosthoc)
         {
-        m_tracer->expand(m_map.id_to_xy(n.state.id), "fuchsia", 
+        m_tracer->expand(m_map.id_to_point(n.state.id), "fuchsia", 
             "generating, h: " + to_string(n.hval) +
             " ,g: " + to_string(n.gval) + 
             " ,f: "+ to_string(n.gval + n.hval) + 
@@ -474,7 +473,7 @@ void Solver<ST>::insert(rjps_state succ, search_node *pred)
                 exist->second = *h;
                 if constexpr(ST == SolverTraits::OutputToPosthoc)
                 {
-                m_tracer->expand(m_map.id_to_xy(n.state.id), "red", 
+                m_tracer->expand(m_map.id_to_point(n.state.id), "red", 
                     "re-opening, h: " + to_string(n.hval) +
                     " ,g: " + to_string(n.gval) + 
                     " ,f: "+ to_string(n.gval + n.hval) + 
@@ -490,7 +489,7 @@ void Solver<ST>::insert(rjps_state succ, search_node *pred)
                 e.parent = n.parent;
                 if constexpr(ST == SolverTraits::OutputToPosthoc)
                 {
-                m_tracer->expand(m_map.id_to_xy(n.state.id), "yellow", 
+                m_tracer->expand(m_map.id_to_point(n.state.id), "yellow", 
                     "updating, h: " + to_string(n.hval) +
                     " ,g: " + to_string(n.gval) + 
                     " ,f: "+ to_string(n.gval + n.hval) + 
@@ -522,19 +521,19 @@ inline void Solver<ST>::insert_start_state(const rjps_state& succ)
 //@param &vec: reference to the return vector of rjps nodes
 //@param xbound: x boundary
 //@param ybound: y boundary
-//@param dir_info: collection of direction info which includes initial scan direction, subseq scan direction and terminating direction
+//@param dir_info: collection of direction info which includes initial scan direction, subseq scan direction_id and terminating direction
 template <SolverTraits ST>
 template <ScanAttribute::Orientation O, ScanAttribute::Octants Octant>
-uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, uint32_t boundary, direction start_d)
+uint32_t Solver<ST>::scan_in_bound(grid_id start, search_node parent, uint32_t boundary, direction_id start_d)
 {
     using ScanAttribute::Octants;
     using namespace ScanAttribute;
 
     auto scan_frontier = uint32_t{};
-    auto start_coord = m_map.id_to_xy(start);
+    auto start_coord = m_map.id_to_point(start);
     //returning scan_frontier only matters when scanning from diag boundary
-    if constexpr(horizontally_bound(Octant)) {scan_frontier = start_coord.first;}
-    else                                     {scan_frontier = start_coord.second;}
+    if constexpr(horizontally_bound(Octant)) {scan_frontier = start_coord.x;}
+    else                                     {scan_frontier = start_coord.y;}
 
     DirectionInfo dir_info{};
     dir_info.init = start_d;
@@ -542,7 +541,7 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, uint32_t bo
     dir_info.jps    = get_jps_dir<Octant>();
     dir_info.terminate = get_terminate_dir<O, Octant>();
     auto scan_res = scanResult{};
-    auto poi = pad_id{}, succ = poi;
+    auto poi = grid_id{}, succ = poi;
     scan_res.d = start_d;
     uint32_t dir_ind = std::countr_zero<uint8_t>(parent.state.dir)-4;
     scan_res.top = get_init_scan_top<Octant>(scan_res.d);
@@ -562,14 +561,14 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, uint32_t bo
         succ = m_ray.shoot_rjps_ray_to_target<ST>(ince, poi, dir_info.jps, m_succ);
         if constexpr(ST == SolverTraits::OutputToPosthoc)
         {
-            m_tracer->trace_ray(m_map.id_to_xy(parent.state.id), m_map.id_to_xy(ince), "aqua", "shoot ray to point");
-            m_tracer->trace_ray(m_map.id_to_xy(ince), m_map.id_to_xy(succ), "aqua", "shoot ray to point");
+            m_tracer->trace_ray(m_map.id_to_point(parent.state.id), m_map.id_to_point(ince), "aqua", "shoot ray to point");
+            m_tracer->trace_ray(m_map.id_to_point(ince), m_map.id_to_point(succ), "aqua", "shoot ray to point");
         }
         //if poi is blocked by another obstacle, recurse scan in both orientation on collision point
         //depending on the orientation and the quadrant, x or y bound is changed
         if(succ != poi)
         {
-            auto start_coord = m_map.id_to_xy(start);
+            auto start_coord = m_map.id_to_point(start);
             uint32_t cw_frontier = 0, ccw_frontier = 0, cw_bound = boundary, ccw_bound = boundary;
             if constexpr (O == ScanAttribute::CW)   //scanning bound for scanning in opposite orientation will be the current frontier
             {
@@ -586,14 +585,14 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, uint32_t bo
         //poi is visible, shoot a jps ray towards it then continue scanning in orientation O
         else
         {
-            auto s_coord = m_map.id_to_xy(poi);
-            if constexpr(horizontally_bound(Octant)) scan_frontier = s_coord.first;
-            else                                     scan_frontier = s_coord.second;
+            auto s_coord = m_map.id_to_point(poi);
+            if constexpr(horizontally_bound(Octant)) scan_frontier = s_coord.x;
+            else                                     scan_frontier = s_coord.y;
             //the scan result indicates the first poi was a concave point, which returns the next convex point
             if(scan_res.on_concave) [[unlikely]]
             {
                 //shift 1 step more to the actual corner point
-                poi = shift_in_dir(poi, 1, scan_res.d, m_map);                
+                poi = shift_in_dir(poi, 1, scan_res.d, m_map.table());                
             }
             //poi was a convex point, shoot a jps ray to and pass it
             else
@@ -602,7 +601,7 @@ uint32_t Solver<ST>::scan_in_bound(pad_id start, search_node parent, uint32_t bo
                 //along with all jump points along the way. TODO: extra jump points might be unnecessary?
                 poi = m_ray.shoot_rjps_ray<ST>(poi, dir_info.jps, m_succ);             
                 scan_res.d = dir_info.subseq;
-                scan_res.top = (dir_info.jps == NORTH || dir_info.jps == WEST);
+                scan_res.top = (dir_info.jps == NORTH_ID || dir_info.jps == WEST_ID);
             }
             if constexpr(horizontally_bound(Octant))    //x is the primary boundary
             {
@@ -628,10 +627,10 @@ double Solver<ST>::interval_h(const rjps_state& v)
     // }
     
     // double hx = 0, hy = 0;
-    // auto hori_dir = direction{}, vert_dir = direction{};
-    // auto x_intv = pad_id{}, y_intv = x_intv;
-    // vert_dir = (v.dir == NORTHEAST || v.dir == NORTHWEST) ? NORTH : SOUTH;
-    // hori_dir = (v.dir == NORTHEAST || v.dir == SOUTHEAST) ? EAST : WEST;
+    // auto hori_dir = direction_id{}, vert_dir = direction_id{};
+    // auto x_intv = grid_id{}, y_intv = x_intv;
+    // vert_dir = (v.dir == NORTHEAST_ID || v.dir == NORTHWEST_ID) ? NORTH_ID : SOUTH_ID;
+    // hori_dir = (v.dir == NORTHEAST_ID || v.dir == SOUTHEAST_ID) ? EAST_ID : WEST_ID;
 
     // auto jump = m_jps->jump_cardinal(vert_dir, jps_id{v.id}, m_jps->id_to_rid(jps_id{v.id}));
     // hy += abs(jump.first);
@@ -659,8 +658,8 @@ double Solver<ST>::interval_h(const rjps_state& v)
     // hy += m_octile_h.h(y_intv.id, m_target.id);
     // if constexpr(ST == SolverTraits::OutputToPosthoc)
     // {
-    //     m_tracer->draw_cell(m_map.id_to_xy(x_intv), "orange", "intx, h: " + to_string(hx));
-    //     m_tracer->draw_cell(m_map.id_to_xy(y_intv), "orange", "inty, h: " + to_string(hy));
+    //     m_tracer->draw_cell(m_map.id_to_point(x_intv), "orange", "intx, h: " + to_string(hx));
+    //     m_tracer->draw_cell(m_map.id_to_point(y_intv), "orange", "inty, h: " + to_string(hy));
     // }
     // return std::min(hx, hy);
 }
