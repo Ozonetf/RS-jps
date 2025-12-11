@@ -193,7 +193,7 @@ grid_id Ray::shoot_diag_ray_id(grid_id start, direction_id dir)
 {
     assert( dir == NORTHEAST_ID || dir == NORTHWEST_ID || dir == SOUTHEAST_ID || dir == SOUTHWEST_ID &&
 	    "Must be intercardinal direction");
-    uint16_t adjx = adj[dir].x, adjy = adj[dir].y;
+    uint16_t adjx = adj[(int)dir-4].x, adjy = adj[(int)dir-4].y;
     auto cur = m_map.id_to_point(start);
     auto cstart[[maybe_unused]] = cur;
     bool next = true;
@@ -223,7 +223,7 @@ grid_id Ray::shoot_diag_ray_id(grid_id start, grid_id target, direction_id dir)
 {
     assert( dir == NORTHEAST_ID || dir == NORTHWEST_ID || dir == SOUTHEAST_ID || dir == SOUTHWEST_ID &&
 	    "Must be intercardinal direction");
-    uint16_t adjx = adj[dir].x, adjy = adj[dir].y;
+    uint16_t adjx = adj[(int)dir-4].x, adjy = adj[(int)dir-4].y;
     auto cur = m_map.id_to_point(start);
     auto cstart[[maybe_unused]] = cur;
     auto tcoord = m_map.id_to_point(target);
@@ -247,7 +247,7 @@ grid_id Ray::shoot_diag_ray_id(grid_id start, grid_id target, direction_id dir)
     }
 }
 
-jump::jump_distance Ray::jump_cardinal(direction_id d, grid_id id)
+inline jump::jump_distance Ray::jump_cardinal(direction_id d, grid_id id)
 {
     jump::jump_distance ret{};
     grid_pair_id pid{id, m_map.id_to_rid(id)};
@@ -317,6 +317,16 @@ grid_id Ray::shoot_rjps_ray_to_target(grid_id start, grid_id target, direction_i
         else
         {
             dist = jump_cardinal(d, ret);
+            if (dist <= 0)
+            {
+                ret.id += idadj * static_cast<uint32_t>(-dist);
+                if constexpr(ST == SolverTraits::OutputToPosthoc) 
+                {
+                    auto r = m_map.id_to_point(ret);
+                    m_tracer->trace_ray(r, m_map.id_to_point(ret), "green", "jps ray");
+                }
+                return ret;
+            }
             ret.id += idadj * static_cast<uint32_t>(dist);
             if constexpr(ST == SolverTraits::OutputToPosthoc) 
             {

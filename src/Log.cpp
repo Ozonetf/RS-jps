@@ -63,8 +63,8 @@ void Tracer::trace_ray(point start, point finish, string color, string type)
 
 void Tracer::draw_bounds(point p, direction_id dir)
 {
-    auto xend = point(p.x, adj[dir].y == (int16_t)-1 ? 0 : m_dim.height);
-    auto yend = point(adj[dir].x == (int16_t)-1 ? 0 : m_dim.width, p.y);
+    auto xend = point(p.x, adj[(int)dir-4].y == (int16_t)-1 ? 0 : m_dim.height);
+    auto yend = point(adj[(int)dir-4].x == (int16_t)-1 ? 0 : m_dim.width, p.y);
     trace_ray_till_close(p, p, xend, "red", "x boundary");
     trace_ray_till_close(p, p, yend, "red", "y boundary");
 }

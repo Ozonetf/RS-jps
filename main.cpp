@@ -62,7 +62,7 @@ static const double EPSILON = 0.000001f;
 template <bool Test>
 void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
 {
-    auto mapfile = string{"../maps/" + mapname};
+    auto mapfile = mapname;
     warthog::domain::gridmap map(mapfile.c_str());
     jps::domain::rotate_gridmap rmap(map);
     jps::jump::jump_point_online jps(rmap);
@@ -100,7 +100,7 @@ void run_scenario(warthog::util::scenario_manager &scen_mngr, string mapname)
 
 void run_single_test(warthog::util::scenario_manager &scen_mngr, string mapname, size_t i)
 {
-    auto mapfile = string{"../maps/" + mapname};
+    auto mapfile = mapname;
     warthog::domain::gridmap map(mapfile.c_str());
     jps::domain::rotate_gridmap rmap(map);
     jps::jump::jump_point_online jps(rmap);
@@ -126,61 +126,67 @@ void run_single_test(warthog::util::scenario_manager &scen_mngr, string mapname,
 }
 
 static const string MAPNAME = "scen/scene_sp_rus_02";
-constexpr bool test = false;
-static const int TESTCASE = 1987;
+constexpr bool TEST = false;
+static const int TESTCASE = 0;
 int main(int argc, char** argv)
 {
     // parse arguments
-    if constexpr(test)
+    warthog::util::param valid_args[]
+        = {{"alg", required_argument, 0, 1},
+        {"scen", required_argument, 0, 0},
+        {"map", required_argument, 0, 1},
+        // {"gen", required_argument, 0, 3},
+        {"help", no_argument, 0, 1},
+        {"checkopt", no_argument, 0, 1},
+        {"verbose", no_argument, 0, 1},
+        {"costs", required_argument, 0, 1},
+        {"test", required_argument, 0, 0},
+        {0, 0, 0, 0}};
+
+    warthog::util::cfg cfg;
+    cfg.parse_args(argc, argv, "a:b:c:def", valid_args);
+
+    std::string sfile = cfg.get_param_value("scen");
+    std::string alg   = cfg.get_param_value("alg");
+    std::string mapfile  = cfg.get_param_value("map");
+    std::string test  = cfg.get_param_value("test");
+
+    if(test == "")
     {
-        std::string sfile = {"../maps/" + MAPNAME + ".map.scen"};
-        std::string mapfile  = {"../maps/" + MAPNAME + ".map"};
-        auto scen_mngr = warthog::util::scenario_manager{};
-        scen_mngr.load_scenario(sfile.c_str());
+        std::puts("please specify test, y == output to console n == pipe to tsv");
+        return 1;
+    }
+    if(alg == "" || sfile == "")
+    {
+        std::puts("alg or scen or map file empty");
+        return 1;
+    }
+    if(alg != "rjps")
+    {
+        std::puts("wrong alg");
+        return 1;
+    }
+
+    auto scen_mngr = warthog::util::scenario_manager{};
+    scen_mngr.load_scenario(sfile.c_str());
+    
+    if(mapfile == "")
+    {
+        // first, try to load the map from the scenario file
+        mapfile = warthog::util::find_map_filename(scen_mngr, sfile);
+        if(mapfile.empty())
+        {
+            std::cerr << "could not locate a corresponding map file\n";
+            return 3;
+        }
+    }
+
+    if constexpr (TEST)
+    {
         run_single_test(scen_mngr, mapfile, TESTCASE);
+        return 0;
     }
-    else
-    {
-        warthog::util::param valid_args[]
-            = {{"alg", required_argument, 0, 1},
-            {"scen", required_argument, 0, 0},
-            {"map", required_argument, 0, 1},
-            // {"gen", required_argument, 0, 3},
-            {"help", no_argument, 0, 1},
-            {"checkopt", no_argument, 0, 1},
-            {"verbose", no_argument, 0, 1},
-            {"costs", required_argument, 0, 1},
-            {"test", required_argument, 0, 0},
-            {0, 0, 0, 0}};
-
-        warthog::util::cfg cfg;
-        cfg.parse_args(argc, argv, "a:b:c:def", valid_args);
-
-        std::string sfile = {"../maps/" + cfg.get_param_value("scen")};
-        std::string alg   = cfg.get_param_value("alg");
-        std::string mapfile  = cfg.get_param_value("map");
-        std::string test  = cfg.get_param_value("test");
-
-        if(test == "")
-        {
-            std::puts("please specify test, y == output to console n == pipe to tsv");
-            return 1;
-        }
-        if(alg == "" || sfile == "" || mapfile == "")
-        {
-            std::puts("alg or scen or map file empty");
-            return 1;
-        }
-        if(alg != "rjps")
-        {
-            std::puts("wrong alg");
-            return 1;
-        }
-
-        auto scen_mngr = warthog::util::scenario_manager{};
-        scen_mngr.load_scenario(sfile.c_str());
-        if(test == "y")run_scenario<true>(scen_mngr, mapfile);
-        else           run_scenario<false>(scen_mngr, mapfile);
-    }
+    if(test == "y")run_scenario<true>(scen_mngr, mapfile);
+    else           run_scenario<false>(scen_mngr, mapfile);
     return 0;
 }

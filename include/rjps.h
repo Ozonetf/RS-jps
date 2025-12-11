@@ -33,7 +33,7 @@ struct rjps_state
 {
     grid_id      id = grid_id::none();
     direction_id   dir = {};
-    direction_id   quad_mask = {};
+    // direction_id   quad_mask = {};
 
     rjps_state(grid_id _v) : id(_v){};
     rjps_state(grid_id _v, direction_id _d) : id(_v), dir(_d){};

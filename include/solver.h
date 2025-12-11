@@ -339,6 +339,7 @@ bool Solver<ST>::init_scan_dir(grid_id start, direction_id p_dir, scan_dir &dir)
     p_dir == NORTHEAST_ID || p_dir == NORTHWEST_ID || p_dir == SOUTHEAST_ID || p_dir == SOUTHWEST_ID 
     && "Init scan direction: in dir must be intercardinal direction");
     // auto adjx = adj[p_dir].x, adjy = adj[p_dir].y;
+    const int dir_id = (int)p_dir - 4;
     bool vert, hori, ret = false;
     vert = m_map.map().get(grid_id(start.id + dir_id_adj_vert(p_dir, m_map.width())));
     hori = m_map.map().get(grid_id(start.id + dir_id_adj_hori(p_dir)));
@@ -346,33 +347,33 @@ bool Solver<ST>::init_scan_dir(grid_id start, direction_id p_dir, scan_dir &dir)
     {
         if(hori) //convex point
         {
-            dir.cw_init = d_init_scan_CW[p_dir][p_dir == NORTH_ID || p_dir == WEST_ID];
-            dir.ccw_init = d_init_scan_CCW[p_dir][p_dir == SOUTH_ID || p_dir == EAST_ID];
+            dir.cw_init = d_init_scan_CW[dir_id][dir_id == NORTH_ID || dir_id == WEST_ID];
+            dir.ccw_init = d_init_scan_CCW[dir_id][dir_id == SOUTH_ID || dir_id == EAST_ID];
             ret = true;
         }
         else//vert
         {
-            dir.cw_init = d_init_scan_CW[p_dir][0];
-            dir.ccw_init = d_init_scan_CCW[p_dir][0];
+            dir.cw_init = d_init_scan_CW[dir_id][0];
+            dir.ccw_init = d_init_scan_CCW[dir_id][0];
         }
     }
     else //vert blocked
     {
         if(hori)//hori
         {
-            dir.cw_init = d_init_scan_CW[p_dir][1];
-            dir.ccw_init = d_init_scan_CCW[p_dir][1];
+            dir.cw_init = d_init_scan_CW[dir_id][1];
+            dir.ccw_init = d_init_scan_CCW[dir_id][1];
         }
         else//concave point
         {
-            dir.cw_init = d_init_scan_CW[p_dir][p_dir == SOUTH_ID || p_dir == EAST_ID];
-            dir.ccw_init = d_init_scan_CCW[p_dir][p_dir == NORTH_ID || p_dir == WEST_ID];
+            dir.cw_init = d_init_scan_CW[dir_id][dir_id == SOUTH_ID || dir_id == EAST_ID];
+            dir.ccw_init = d_init_scan_CCW[dir_id][dir_id == NORTH_ID || dir_id == WEST_ID];
         }
     }
-    dir.cw_subseq = d_scan[p_dir][0];
-    dir.cw_jps = d_jps[p_dir][0];
-    dir.ccw_subseq = d_scan[p_dir][1];
-    dir.ccw_jps = d_jps[p_dir][1];
+    dir.cw_subseq = d_scan[dir_id][0];
+    dir.cw_jps = d_jps[dir_id][0];
+    dir.ccw_subseq = d_scan[dir_id][1];
+    dir.ccw_jps = d_jps[dir_id][1];
     return ret;
 }
 
@@ -543,7 +544,6 @@ uint32_t Solver<ST>::scan_in_bound(grid_id start, search_node parent, uint32_t b
     auto scan_res = scanResult{};
     auto poi = grid_id{}, succ = poi;
     scan_res.d = start_d;
-    uint32_t dir_ind = std::countr_zero<uint8_t>(parent.state.dir)-4;
     scan_res.top = get_init_scan_top<Octant>(scan_res.d);
     if constexpr(horizontally_bound(Octant))    //x is the primary boundary
     {
